@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js';
+import { createSignal, Show, For } from 'solid-js';
 import { db, storage } from './firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { collection, addDoc } from "firebase/firestore";
@@ -25,8 +25,10 @@ function App() {
   const [logs, setLogs] = createSignal([]);
   const [isUploading, setIsUploading] = createSignal(false);
   const [uploadProgress, setUploadProgress] = createSignal(0);
-  const [previewUrl, setPreviewUrl] = createSignal(null); // State für die Vorschau-URL
-  const [exifData, setExifData] = createSignal(null); // State für die EXIF-Daten
+  const [previewUrl, setPreviewUrl] = createSignal(null);
+  const [exifData, setExifData] = createSignal(null); // State for curated EXIF data
+  const [allExifTags, setAllExifTags] = createSignal(null); // State for ALL EXIF tags
+  const [selectedFile, setSelectedFile] = createSignal(null);
 
   const addLog = (text, type = 'info') => {
     setLogs(prev => [...prev, { text, type, time: new Date().toLocaleTimeString() }]);
@@ -34,27 +36,56 @@ function App() {
 
   const handleSingleIngest = (e) => {
     const file = e.target.files[0];
+    setSelectedFile(file);
     if (!file) {
       setPreviewUrl(null);
       setExifData(null);
+      setAllExifTags(null);
       return;
     }
 
-    setPreviewUrl(URL.createObjectURL(file)); // Lokale URL für die Vorschau erstellen
-    setExifData(null); // Alte EXIF-Daten zurücksetzen
+    setPreviewUrl(URL.createObjectURL(file));
+    setExifData(null);
+    setAllExifTags(null);
     setIsUploading(true);
     setUploadProgress(0);
     addLog(`START: Verarbeite ${file.name}...`, 'info');
 
     try {
       ExifReader.load(file).then(tags => {
+        setAllExifTags(tags);
         addLog("Lese EXIF Daten...", 'process');
-        const cameraModel = tags['Model']?.description || "Unbekannt";
-        const iso = tags['ISOSpeedRatings']?.value || "Unbekannt";
-        setExifData({ camera: cameraModel, iso: iso }); // EXIF-Daten im State speichern
 
-        addLog(`Kamera erkannt: ${cameraModel}`, 'success');
-        
+        const getExifDesc = (tag) => (tag?.description || "N/A");
+        const getValue = (tag) => (tag?.value ?? "N/A");
+
+        const curatedExif = {
+          "Identifikation & Zeit": {
+            Model: getExifDesc(tags['Model']),
+            DateTimeOriginal: getExifDesc(tags['DateTimeOriginal']),
+          },
+          "Belichtung & Optik (KI-Input)": {
+            ISOSpeedRatings: getValue(tags['ISOSpeedRatings']),
+            ExposureTime: getExifDesc(tags['ExposureTime']),
+            FNumber: `f/${getValue(tags['FNumber'])}`,
+            FocalLengthIn35mmFilm: `${getValue(tags['FocalLengthIn35mmFilm'])} mm`,
+            ExposureBiasValue: getExifDesc(tags['ExposureBiasValue']),
+          },
+          "Bildcharakteristik & Modus": {
+            ExposureProgram: getExifDesc(tags['ExposureProgram']),
+            WhiteBalance: getExifDesc(tags['WhiteBalance']),
+            GainControl: getExifDesc(tags['GainControl']),
+            MeteringMode: getExifDesc(tags['MeteringMode']),
+          },
+          "Technische Bildbasis": {
+            ImageWidth: getValue(tags['ImageWidth']),
+            ImageLength: getValue(tags['ImageLength']),
+            Orientation: getExifDesc(tags['Orientation']),
+          }
+        };
+        setExifData(curatedExif);
+        addLog(`Kamera erkannt: ${curatedExif["Identifikation & Zeit"].Model}`, 'success');
+
         addLog("Lade Bild in die Cloud...", 'process');
         const storageRef = ref(storage, `uploads/${file.name}`);
         const uploadTask = uploadBytesResumable(storageRef, file);
@@ -76,9 +107,9 @@ function App() {
               await addDoc(collection(db, "assets"), {
                 filename: file.name,
                 url: url,
-                camera: cameraModel,
-                iso: iso,
-                uploadedAt: new Date()
+                uploadedAt: new Date(),
+                curatedExif: curatedExif, // Store the curated data
+                allExif: tags // Store all EXIF data
               });
               addLog("✅ ERFOLG! Asset in Firestore gespeichert.", 'success');
               setIsUploading(false);
@@ -99,9 +130,8 @@ function App() {
         <h2>Lumina Pipeline Check</h2>
       </div>
 
-      <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
-        {/* Linke Seite: Uploader */}
-        <div style={{ flex: 1 }}>
+      <div style={{ display: 'flex', gap: '20px', marginTop: '20px', alignItems: 'flex-start' }}>
+        <div style={{ flex: 2 }}>
           <div style={{ border: '2px dashed #444', padding: '40px', textAlign: 'center', borderRadius: '12px', background: '#1a1a1a' }}>
             <input type="file" id="fileInput" onChange={handleSingleIngest} style={{ display: 'none' }} accept="image/*,.nef,.dng" disabled={isUploading()}/>
             <label htmlFor="fileInput" style={{ cursor: isUploading() ? 'default' : 'pointer', fontSize: '1.2rem', color: isUploading() ? '#666' : '#fff', fontWeight: 'bold' }}>
@@ -115,18 +145,44 @@ function App() {
           </div>
         </div>
 
-        {/* Rechte Seite: Vorschau & EXIF */}
         <Show when={previewUrl()}>
           <div style={{ flex: 1, background: '#1a1a1a', padding: '20px', borderRadius: '12px' }}>
-            <h4 style={{ marginTop: 0, color: '#999' }}>Vorschau</h4>
-            <img src={previewUrl()} alt="Vorschau" style={{ maxWidth: '100%', borderRadius: '8px' }} />
+            <h4 style={{ marginTop: 0, color: '#999' }}>Vorschau & Metadaten</h4>
+            <img src={previewUrl()} alt="Vorschau" style={{ maxHeight: '150px', width: 'auto', borderRadius: '8px', display: 'block', margin: '0 auto' }} />
+            
             <Show when={exifData()}>
-              <div style={{ marginTop: '15px' }}>
-                <h5 style={{ marginBottom: '10px', color: '#999' }}>Gelesene EXIF Daten:</h5>
-                <p style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#ddd' }}><b>Kamera:</b> {exifData().camera}</p>
-                <p style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#ddd' }}><b>ISO:</b> {exifData().iso}</p>
+              <div style={{ marginTop: '15px', maxHeight: '300px', overflowY: 'auto' }}>
+                <For each={Object.entries(exifData())}>{
+                  ([category, data]) => (
+                    <div style={{ marginBottom: '15px' }}>
+                      <h5 style={{ marginBottom: '8px', color: '#aaa', borderBottom: '1px solid #444', paddingBottom: '4px' }}>{category}</h5>
+                      <For each={Object.entries(data)}>{([key, value]) => (
+                        <p style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0', fontFamily: 'monospace', fontSize: '11px', color: '#ddd' }}>
+                          <b style={{ color: '#888', paddingRight: '10px' }}>{key}:</b> 
+                          <span>{String(value)}</span>
+                        </p>)}
+                      </For>
+                    </div>
+                  )}
+                </For>
               </div>
             </Show>
+
+            {/* 
+            MVP Fallback: Auskommentiert, aber bereit für später
+            <Show when={allExifTags() && selectedFile() && selectedFile().name.toLowerCase().endsWith('.nef')}>
+                <div style={{ marginTop: '20px', maxHeight: '250px', overflowY: 'auto', background: '#000', padding: '10px', borderRadius: '5px', border: '1px solid #333' }}>
+                    <h5 style={{ color: '#999', marginTop: '0', marginBottom:'10px' }}>Alle EXIF-Daten (.NEF):</h5>
+                    <For each={Object.entries(allExifTags())}>{
+                        ([key, value]) => (
+                            <div style={{ margin: 0, fontFamily: 'monospace', fontSize: '11px', color: '#ccc', borderBottom: '1px solid #222', paddingBottom: '4px', marginBottom: '4px' }}>
+                                <b style={{color: '#888'}}>{key}:</b> {value?.description ? value.description : JSON.stringify(value)}
+                            </div>
+                        )}
+                    </For>
+                </div>
+            </Show> 
+            */}
           </div>
         </Show>
       </div>
