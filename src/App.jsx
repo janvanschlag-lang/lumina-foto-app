@@ -1,6 +1,6 @@
-import { createSignal } from 'solid-js';
+import { createSignal, Show } from 'solid-js';
 import { db, storage } from './firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage"; // uploadBytesResumable importieren
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { collection, addDoc } from "firebase/firestore";
 import ExifReader from 'exifreader';
 import './App.css';
@@ -24,7 +24,9 @@ const LogConsole = (props) => {
 function App() {
   const [logs, setLogs] = createSignal([]);
   const [isUploading, setIsUploading] = createSignal(false);
-  const [uploadProgress, setUploadProgress] = createSignal(0); // Neuer State für den Fortschritt
+  const [uploadProgress, setUploadProgress] = createSignal(0);
+  const [previewUrl, setPreviewUrl] = createSignal(null); // State für die Vorschau-URL
+  const [exifData, setExifData] = createSignal(null); // State für die EXIF-Daten
 
   const addLog = (text, type = 'info') => {
     setLogs(prev => [...prev, { text, type, time: new Date().toLocaleTimeString() }]);
@@ -32,8 +34,14 @@ function App() {
 
   const handleSingleIngest = (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file) {
+      setPreviewUrl(null);
+      setExifData(null);
+      return;
+    }
 
+    setPreviewUrl(URL.createObjectURL(file)); // Lokale URL für die Vorschau erstellen
+    setExifData(null); // Alte EXIF-Daten zurücksetzen
     setIsUploading(true);
     setUploadProgress(0);
     addLog(`START: Verarbeite ${file.name}...`, 'info');
@@ -42,12 +50,13 @@ function App() {
       ExifReader.load(file).then(tags => {
         addLog("Lese EXIF Daten...", 'process');
         const cameraModel = tags['Model']?.description || "Unbekannt";
+        const iso = tags['ISOSpeedRatings']?.value || "Unbekannt";
+        setExifData({ camera: cameraModel, iso: iso }); // EXIF-Daten im State speichern
+
         addLog(`Kamera erkannt: ${cameraModel}`, 'success');
         
         addLog("Lade Bild in die Cloud...", 'process');
         const storageRef = ref(storage, `uploads/${file.name}`);
-        
-        // Wir verwenden uploadBytesResumable für den Fortschritt
         const uploadTask = uploadBytesResumable(storageRef, file);
 
         uploadTask.on('state_changed', 
@@ -68,7 +77,7 @@ function App() {
                 filename: file.name,
                 url: url,
                 camera: cameraModel,
-                iso: tags['ISOSpeedRatings']?.value || 0,
+                iso: iso,
                 uploadedAt: new Date()
               });
               addLog("✅ ERFOLG! Asset in Firestore gespeichert.", 'success');
@@ -85,43 +94,41 @@ function App() {
   };
 
   return (
-    <div className="container" style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+    <div className="container" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>Lumina Pipeline Check</h2>
       </div>
 
-      <div style={{ 
-        border: '2px dashed #444', 
-        padding: '40px', 
-        textAlign: 'center', 
-        borderRadius: '12px',
-        background: '#1a1a1a',
-        marginTop: '20px'
-      }}>
-        <input 
-          type="file" 
-          id="fileInput" 
-          onChange={handleSingleIngest} 
-          style={{ display: 'none' }} 
-          accept="image/*,.nef,.dng"
-          disabled={isUploading()}
-        />
-        <label 
-          htmlFor="fileInput" 
-          style={{ 
-            cursor: isUploading() ? 'default' : 'pointer', 
-            fontSize: '1.2rem', 
-            color: isUploading() ? '#666' : '#fff',
-            fontWeight: 'bold'
-          }}
-        >
-          {isUploading() ? `Lade hoch... ${Math.round(uploadProgress())}%` : "📂 Wähle ein Test-Bild (JPG oder NEF)"}
-        </label>
-        {isUploading() && (
-          <div style={{ marginTop: '20px', background: '#333', borderRadius: '5px', overflow: 'hidden' }}>
-            <div style={{ width: `${uploadProgress()}%`, height: '10px', background: '#55ff55', transition: 'width 0.2s' }}></div>
+      <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
+        {/* Linke Seite: Uploader */}
+        <div style={{ flex: 1 }}>
+          <div style={{ border: '2px dashed #444', padding: '40px', textAlign: 'center', borderRadius: '12px', background: '#1a1a1a' }}>
+            <input type="file" id="fileInput" onChange={handleSingleIngest} style={{ display: 'none' }} accept="image/*,.nef,.dng" disabled={isUploading()}/>
+            <label htmlFor="fileInput" style={{ cursor: isUploading() ? 'default' : 'pointer', fontSize: '1.2rem', color: isUploading() ? '#666' : '#fff', fontWeight: 'bold' }}>
+              {isUploading() ? `Lade hoch... ${Math.round(uploadProgress())}%` : "📂 Wähle ein Test-Bild (JPG oder NEF)"}
+            </label>
+            {isUploading() && (
+              <div style={{ marginTop: '20px', background: '#333', borderRadius: '5px', overflow: 'hidden' }}>
+                <div style={{ width: `${uploadProgress()}%`, height: '10px', background: '#55ff55', transition: 'width 0.2s' }}></div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* Rechte Seite: Vorschau & EXIF */}
+        <Show when={previewUrl()}>
+          <div style={{ flex: 1, background: '#1a1a1a', padding: '20px', borderRadius: '12px' }}>
+            <h4 style={{ marginTop: 0, color: '#999' }}>Vorschau</h4>
+            <img src={previewUrl()} alt="Vorschau" style={{ maxWidth: '100%', borderRadius: '8px' }} />
+            <Show when={exifData()}>
+              <div style={{ marginTop: '15px' }}>
+                <h5 style={{ marginBottom: '10px', color: '#999' }}>Gelesene EXIF Daten:</h5>
+                <p style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#ddd' }}><b>Kamera:</b> {exifData().camera}</p>
+                <p style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#ddd' }}><b>ISO:</b> {exifData().iso}</p>
+              </div>
+            </Show>
+          </div>
+        </Show>
       </div>
 
       <LogConsole logs={logs} />
