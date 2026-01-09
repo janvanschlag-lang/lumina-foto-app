@@ -1,106 +1,143 @@
 import { createSignal, onMount } from 'solid-js';
-import { auth } from './firebase';
-import { 
-  onAuthStateChanged, 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signOut 
-} from "firebase/auth";
+import { auth, db, storage } from './firebase'; 
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, addDoc } from "firebase/firestore";
+import ExifReader from 'exifreader';
 import './App.css';
 
 function App() {
+  const [user, setUser] = createSignal(null);
   const [email, setEmail] = createSignal("");
   const [password, setPassword] = createSignal("");
-  const [message, setMessage] = createSignal("");
-  const [user, setUser] = createSignal(null);
-  const [isLoading, setIsLoading] = createSignal(true);
+  // Logs für die visuelle Kontrolle
+  const [logs, setLogs] = createSignal([]);
+  const [isUploading, setIsUploading] = createSignal(false);
+
+  // Funktion um Nachrichten in die Konsole auf dem Bildschirm zu schreiben
+  const addLog = (text, type = 'info') => {
+    setLogs(prev => [...prev, { text, type, time: new Date().toLocaleTimeString() }]);
+  };
 
   onMount(() => {
-    // Falls Firebase zu lange braucht, erzwingen wir das Ende des Ladebildschirms nach 2 Sek.
-    const fallbackTimeout = setTimeout(() => setIsLoading(false), 2000);
-
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      clearTimeout(fallbackTimeout);
-      setUser(firebaseUser);
-      setIsLoading(false);
+    onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if(u) addLog(`Verbunden als ${u.email}`, 'success');
     });
-    
-    return () => unsubscribe();
   });
 
-  const handleAuth = async (type) => {
-    setMessage("Verarbeite...");
+  const handleLogin = async () => {
     try {
-      let res;
-      if (type === 'register') {
-        res = await createUserWithEmailAndPassword(auth, email(), password());
-      } else {
-        res = await signInWithEmailAndPassword(auth, email(), password());
-      }
-      setUser(res.user);
-      setMessage("");
-    } catch (error) {
-      setMessage(`Fehler: ${error.message}`);
+      await signInWithEmailAndPassword(auth, email(), password());
+    } catch (e) {
+      addLog("Login Fehler: " + e.message, 'error');
     }
   };
 
-  const handleLogout = async () => {
+  // --- HIER PASSIERT DIE MAGIE ---
+  const handleSingleIngest = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    addLog(`START: Verarbeite ${file.name}...`, 'info');
+
     try {
-      await signOut(auth);
-      setUser(null);
-      setMessage("Ausgeloggt.");
+      // 1. EXIF DATEN LESEN (Lokal im Browser)
+      addLog("Lese EXIF Daten...", 'process');
+      const tags = await ExifReader.load(file);
+      const cameraModel = tags['Model']?.description || "Unbekannt";
+      addLog(`Kamera erkannt: ${cameraModel}`, 'success');
+
+      // 2. UPLOAD IN STORAGE (Cloud Festplatte)
+      addLog("Lade Bild in die Cloud...", 'process');
+      // Speicherpfad: users/USER_ID/DATEINAME
+      const storageRef = ref(storage, `users/${user().uid}/${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      addLog("Upload fertig. URL generiert.", 'success');
+
+      // 3. DATENBANK EINTRAG (Firestore)
+      addLog("Schreibe in Datenbank...", 'process');
+      await addDoc(collection(db, "assets"), {
+        userId: user().uid,
+        filename: file.name,
+        url: url,
+        camera: cameraModel,
+        iso: tags['ISOSpeedRatings']?.value || 0,
+        uploadedAt: new Date()
+      });
+      addLog("✅ ERFOLG! Asset in Firestore gespeichert.", 'success');
+
     } catch (error) {
-      setMessage("Fehler beim Abmelden.");
+      console.error(error);
+      addLog("FEHLER: " + error.message, 'error');
+    } finally {
+      setIsUploading(false);
     }
   };
+
+  // --- UI ---
+  if (!user()) {
+    return (
+      <div className="container">
+        <h1>Lumina Ingest Test</h1>
+        <input type="email" placeholder="Email" onInput={(e)=>setEmail(e.target.value)}/>
+        <input type="password" placeholder="Passwort" onInput={(e)=>setPassword(e.target.value)}/>
+        <button onClick={handleLogin}>Login</button>
+      </div>
+    );
+  }
 
   return (
-    <div class="container">
-      <h1>Lumina</h1>
-      
-      {isLoading() ? (
-        <p>Lade App-Daten...</p>
-      ) : (
-        <>
-          {!user() ? (
-            <div class="card">
-              <h3>Anmelden</h3>
-              <input 
-                type="email" 
-                placeholder="E-Mail" 
-                onInput={(e) => setEmail(e.currentTarget.value)} 
-              />
-              <input 
-                type="password" 
-                placeholder="Passwort" 
-                onInput={(e) => setPassword(e.currentTarget.value)} 
-              />
-              <div class="button-group">
-                <button onClick={() => handleAuth('login')}>Login</button>
-                <button onClick={() => handleAuth('register')} class="secondary">Registrieren</button>
-              </div>
-            </div>
-          ) : (
-            <div class="card">
-              <p>Angemeldet als: <strong>{user().email}</strong></p>
-              
-              <div style={{ 
-                "margin": "30px 0", 
-                "padding": "20px", 
-                "border": "2px dashed #ccc",
-                "background": "#fff",
-                "color": "#000"
-              }}>
-                <p>Bereit für dein Konzept!</p>
-              </div>
+    <div className="container" style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>Lumina Pipeline Check</h2>
+        <button onClick={() => signOut(auth)} style={{ background: '#333' }}>Logout</button>
+      </div>
 
-              <button onClick={handleLogout} class="danger">Ausloggen</button>
-            </div>
-          )}
-        </>
-      )}
+      {/* DER UPLOAD BUTTON */}
+      <div style={{ 
+        border: '2px dashed #444', 
+        padding: '40px', 
+        textAlign: 'center', 
+        borderRadius: '12px',
+        background: '#1a1a1a',
+        marginTop: '20px'
+      }}>
+        <input 
+          type="file" 
+          id="fileInput" 
+          onChange={handleSingleIngest} 
+          style={{ display: 'none' }} 
+          accept="image/*,.nef,.dng" // Akzeptiert auch deine RAWs
+          disabled={isUploading()}
+        />
+        <label 
+          htmlFor="fileInput" 
+          style={{ 
+            cursor: 'pointer', 
+            fontSize: '1.2rem', 
+            color: isUploading() ? '#666' : '#fff',
+            fontWeight: 'bold'
+          }}
+        >
+          {isUploading() ? "Verarbeite..." : "📂 Wähle ein Test-Bild (JPG oder NEF)"}
+        </label>
+      </div>
 
-      {message() && <p class="status-message">{message()}</p>}
+      {/* DIE LOG KONSOLE */}
+      <div style={{ marginTop: '30px', background: '#000', padding: '15px', borderRadius: '8px', fontFamily: 'monospace', fontSize: '12px' }}>
+        <h4 style={{ margin: '0 0 10px 0', color: '#666' }}>SYSTEM PROTOKOLL:</h4>
+        {logs().map((log, i) => (
+          <div key={i} style={{ 
+            marginBottom: '4px', 
+            color: log.type === 'error' ? '#ff5555' : log.type === 'success' ? '#55ff55' : log.type === 'process' ? '#ffff55' : '#ccc' 
+          }}>
+            <span style={{ color: '#555' }}>[{log.time}]</span> {log.text}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
