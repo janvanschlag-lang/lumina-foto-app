@@ -13,17 +13,21 @@ function App() {
   const [password, setPassword] = createSignal("");
   const [message, setMessage] = createSignal("");
   const [user, setUser] = createSignal(null);
-  const [loading, setLoading] = createSignal(true);
+  const [isLoading, setIsLoading] = createSignal(true);
 
-  // Prüfen, ob der Nutzer bereits eingeloggt ist
   onMount(() => {
-    onAuthStateChanged(auth, (firebaseUser) => {
+    // Falls Firebase zu lange braucht, erzwingen wir das Ende des Ladebildschirms nach 2 Sek.
+    const fallbackTimeout = setTimeout(() => setIsLoading(false), 2000);
+
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      clearTimeout(fallbackTimeout);
       setUser(firebaseUser);
-      setLoading(false);
+      setIsLoading(false);
     });
+    
+    return () => unsubscribe();
   });
 
-  // Authentifizierung (Login/Register)
   const handleAuth = async (type) => {
     setMessage("Verarbeite...");
     try {
@@ -41,45 +45,59 @@ function App() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
-    setUser(null);
-    setMessage("Ausgeloggt.");
+    try {
+      await signOut(auth);
+      setUser(null);
+      setMessage("Ausgeloggt.");
+    } catch (error) {
+      setMessage("Fehler beim Abmelden.");
+    }
   };
-
-  if (loading()) return <div class="container"><p>Lumina wird geladen...</p></div>;
 
   return (
     <div class="container">
       <h1>Lumina</h1>
       
-      {!user() ? (
-        <div class="card">
-          <h3>Anmelden</h3>
-          <input 
-            type="email" 
-            placeholder="E-Mail" 
-            onInput={(e) => setEmail(e.currentTarget.value)} 
-          />
-          <input 
-            type="password" 
-            placeholder="Passwort" 
-            onInput={(e) => setPassword(e.currentTarget.value)} 
-          />
-          <div class="button-group">
-            <button onClick={() => handleAuth('login')}>Login</button>
-            <button onClick={() => handleAuth('register')} class="secondary">Registrieren</button>
-          </div>
-        </div>
+      {isLoading() ? (
+        <p>Lade App-Daten...</p>
       ) : (
-        <div class="card">
-          <p>Angemeldet als: <strong>{user().email}</strong></p>
-          
-          <div style={{ "margin": "40px 0", "padding": "20px", "border": "2px dashed #ccc" }}>
-            <p>Hier starten wir jetzt mit deinem Konzept...</p>
-          </div>
+        <>
+          {!user() ? (
+            <div class="card">
+              <h3>Anmelden</h3>
+              <input 
+                type="email" 
+                placeholder="E-Mail" 
+                onInput={(e) => setEmail(e.currentTarget.value)} 
+              />
+              <input 
+                type="password" 
+                placeholder="Passwort" 
+                onInput={(e) => setPassword(e.currentTarget.value)} 
+              />
+              <div class="button-group">
+                <button onClick={() => handleAuth('login')}>Login</button>
+                <button onClick={() => handleAuth('register')} class="secondary">Registrieren</button>
+              </div>
+            </div>
+          ) : (
+            <div class="card">
+              <p>Angemeldet als: <strong>{user().email}</strong></p>
+              
+              <div style={{ 
+                "margin": "30px 0", 
+                "padding": "20px", 
+                "border": "2px dashed #ccc",
+                "background": "#fff",
+                "color": "#000"
+              }}>
+                <p>Bereit für dein Konzept!</p>
+              </div>
 
-          <button onClick={handleLogout} class="danger">Ausloggen</button>
-        </div>
+              <button onClick={handleLogout} class="danger">Ausloggen</button>
+            </div>
+          )}
+        </>
       )}
 
       {message() && <p class="status-message">{message()}</p>}
