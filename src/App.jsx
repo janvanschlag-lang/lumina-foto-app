@@ -1,6 +1,11 @@
-import { createSignal } from 'solid-js';
+import { createSignal, onMount } from 'solid-js';
 import { auth } from './firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { 
+  onAuthStateChanged, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut 
+} from "firebase/auth";
 import './App.css';
 
 function App() {
@@ -8,20 +13,28 @@ function App() {
   const [password, setPassword] = createSignal("");
   const [message, setMessage] = createSignal("");
   const [user, setUser] = createSignal(null);
+  const [loading, setLoading] = createSignal(true);
 
-  // Funktion für Registrierung und Login
+  // Prüfen, ob der Nutzer bereits eingeloggt ist
+  onMount(() => {
+    onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      setLoading(false);
+    });
+  });
+
+  // Authentifizierung (Login/Register)
   const handleAuth = async (type) => {
-    setMessage("Lade...");
+    setMessage("Verarbeite...");
     try {
+      let res;
       if (type === 'register') {
-        const res = await createUserWithEmailAndPassword(auth, email(), password());
-        setUser(res.user);
-        setMessage("Konto erfolgreich erstellt!");
+        res = await createUserWithEmailAndPassword(auth, email(), password());
       } else {
-        const res = await signInWithEmailAndPassword(auth, email(), password());
-        setUser(res.user);
-        setMessage("Erfolgreich eingeloggt!");
+        res = await signInWithEmailAndPassword(auth, email(), password());
       }
+      setUser(res.user);
+      setMessage("");
     } catch (error) {
       setMessage(`Fehler: ${error.message}`);
     }
@@ -33,13 +46,15 @@ function App() {
     setMessage("Ausgeloggt.");
   };
 
+  if (loading()) return <div class="container"><p>Lumina wird geladen...</p></div>;
+
   return (
     <div class="container">
-      <h1>Lumina Foto App</h1>
+      <h1>Lumina</h1>
       
       {!user() ? (
         <div class="card">
-          <h3>Login oder Registrierung</h3>
+          <h3>Anmelden</h3>
           <input 
             type="email" 
             placeholder="E-Mail" 
@@ -47,7 +62,7 @@ function App() {
           />
           <input 
             type="password" 
-            placeholder="Passwort (min. 6 Zeichen)" 
+            placeholder="Passwort" 
             onInput={(e) => setPassword(e.currentTarget.value)} 
           />
           <div class="button-group">
@@ -58,11 +73,12 @@ function App() {
       ) : (
         <div class="card">
           <p>Angemeldet als: <strong>{user().email}</strong></p>
-          <button onClick={handleLogout} class="danger">Ausloggen</button>
           
-          <div style={{ "margin-top": "20px", "border-top": "1px solid #ccc", "padding-top": "10px" }}>
-            <p>📸 Kamera-Modul kommt im nächsten Schritt!</p>
+          <div style={{ "margin": "40px 0", "padding": "20px", "border": "2px dashed #ccc" }}>
+            <p>Hier starten wir jetzt mit deinem Konzept...</p>
           </div>
+
+          <button onClick={handleLogout} class="danger">Ausloggen</button>
         </div>
       )}
 
