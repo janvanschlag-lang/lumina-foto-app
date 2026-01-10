@@ -101,7 +101,7 @@ function App() {
       <div class="left-sidebar">
         <div style={{ padding: '16px', borderBottom: '1px solid #222' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600', letterSpacing: '-0.02em' }}>Lumina Ingest</h3>
-          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.2.1 AI</div>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.4 AI Vision</div>
         </div>
 
         <div style={{ padding: '16px' }}>
@@ -116,28 +116,64 @@ function App() {
         <LogConsole logs={logs} />
       </div>
 
-      {/* 2. CENTER STAGE */}
-      <div class="center-stage">
-        <div style={{ height: '40px', borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444', fontSize: '11px', fontFamily: 'monospace', flexShrink: 0 }}>
+      {/* 2. CENTER STAGE (Updated Layout) */}
+      <div class="center-stage" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        
+        {/* Header Zeile */}
+        <div style={{ height: '40px', borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444', fontSize: '11px', fontFamily: 'monospace', flexShrink: 0, background: '#111' }}>
           {currentBundleName() || "WARTE AUF EINGABE"}
         </div>
-        <div class="preview-stage">
+
+        {/* Oberer Bereich: BILD (Flexibel) */}
+        <div style={{ flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: '20px', background: '#0e0e0e' }}>
           <Show when={previewUrl()} fallback={
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#222', fontSize: '12px' }}>Keine Vorschau</div>
+            <div style={{ color: '#333', fontSize: '12px' }}>Keine Vorschau</div>
           }>
-            <img src={previewUrl()} alt="Preview" class="preview-image" />
+            <img src={previewUrl()} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} />
           </Show>
         </div>
+
+        {/* Unterer Bereich: AI READOUT (Fixe Höhe oder flexibel) */}
+        <Show when={activeExif()?.ai?.analysis}>
+          <div style={{ 
+            height: '35%', // Nimmt unteres Drittel ein
+            borderTop: '1px solid #333', 
+            background: '#080808', 
+            padding: '20px', 
+            overflowY: 'auto',
+            fontFamily: 'monospace'
+          }}>
+            <div style={{ fontSize: '10px', color: '#4d8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px', fontWeight: 'bold' }}>
+              /// GEMINI VISION REPORT
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '12px', fontSize: '11px', lineHeight: '1.6' }}>
+              
+              <div style={{ color: '#666' }}>SUBJECT</div>
+              <div style={{ color: '#ddd' }}>{activeExif().ai.analysis.subject || '-'}</div>
+              
+              <div style={{ color: '#666' }}>LIGHTING</div>
+              <div style={{ color: '#ccc' }}>{activeExif().ai.analysis.lighting || '-'}</div>
+              
+              <div style={{ color: '#666' }}>COMPOSITION</div>
+              <div style={{ color: '#ccc' }}>{activeExif().ai.analysis.composition || '-'}</div>
+              
+              <div style={{ color: '#666' }}>TECH CHECK</div>
+              <div style={{ color: '#ccc' }}>{activeExif().ai.analysis.technical || '-'}</div>
+
+            </div>
+          </div>
+        </Show>
+
       </div>
 
-      {/* 3. RIGHT SIDEBAR - MIT TOP 3 AI KEYWORDS */}
+      {/* 3. RIGHT SIDEBAR */}
       <div class="right-sidebar">
         <div style={{ color: '#555', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '15px', fontWeight: 'bold' }}>Status Monitor</div>
         
         <Show when={isProcessing() || previewUrl()}>
           <div style={{ background: '#161616', borderRadius: '4px', padding: '12px', border: '1px solid #222' }}>
             
-            {/* Pipeline Status */}
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '11px', color: '#fff', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4f4', boxShadow: '0 0 5px #4f4' }}></div>
@@ -148,7 +184,6 @@ function App() {
               </div>
             </div>
 
-            {/* ECHTE DATEN */}
             <Show when={activeExif()}>
               <div style={{ marginTop: '16px', borderTop: '1px solid #333', paddingTop: '12px' }}>
                 <div style={{ fontSize: '9px', color: '#666', marginBottom: '8px', textTransform:'uppercase', fontWeight: 'bold' }}>RAW Metadaten</div>
@@ -177,15 +212,14 @@ function App() {
                 </div>
               </div>
 
-              {/* NEU: TOP 3 KEYWORDS */}
+              {/* AI Keywords Visualisierung */}
               <Show when={activeExif()?.ai?.keywords?.length > 0}>
                 <div style={{ marginTop: '20px', borderTop: '1px solid #333', paddingTop: '12px' }}>
                   <div style={{ fontSize: '9px', color: '#4d8', marginBottom: '10px', textTransform:'uppercase', fontWeight: 'bold', display:'flex', alignItems:'center', gap:'6px' }}>
-                    <span>✦ Gemini Vision (Top 3)</span>
+                    <span>✦ Gemini Vision (Tags)</span>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {/* HIER: slice(0, 3) für maximal 3 Begriffe */}
-                    <For each={activeExif().ai.keywords.slice(0, 3)}>{(kw) => (
+                    <For each={activeExif().ai.keywords.slice(0, 5)}>{(kw) => (
                       <span style={{ 
                         fontSize: '10px', 
                         background: '#0f1f15', 
@@ -198,11 +232,9 @@ function App() {
                         {kw}
                       </span>
                     )}</For>
-                    
-                    {/* Optional: +X more Anzeige */}
-                    <Show when={activeExif().ai.keywords.length > 3}>
+                    <Show when={activeExif().ai.keywords.length > 5}>
                        <span style={{ fontSize: '9px', color: '#555', alignSelf: 'center', marginLeft: '2px' }}>
-                         +{activeExif().ai.keywords.length - 3} more
+                         +{activeExif().ai.keywords.length - 5}
                        </span>
                     </Show>
                   </div>
