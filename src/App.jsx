@@ -1,6 +1,6 @@
 import { createSignal, Show, For } from 'solid-js';
 import { processAssetBundle } from './services/CoreBrain';
-import './App.css'; // Stellt sicher, dass unsere neuen Klassen geladen werden
+import './App.css';
 
 // --- UI COMPONENTS ---
 
@@ -96,13 +96,11 @@ function App() {
       
       {/* 1. LEFT SIDEBAR */}
       <div class="left-sidebar">
-        {/* Header */}
         <div style={{ padding: '16px', borderBottom: '1px solid #222' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600', letterSpacing: '-0.02em' }}>Lumina Ingest</h3>
           <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.2 MVP</div>
         </div>
 
-        {/* Upload Area */}
         <div style={{ padding: '16px' }}>
           <input 
             type="file" 
@@ -117,14 +115,14 @@ function App() {
             display: 'flex', 
             flexDirection: 'column', 
             alignItems: 'center', 
-            justifyContent: 'center',
-            height: '120px',
+            justifyContent: 'center', 
+            height: '120px', 
             border: '1px dashed #444', 
             borderRadius: '6px', 
-            cursor: isProcessing() ? 'wait' : 'pointer',
-            background: isProcessing() ? '#1a1a1a' : '#161616',
-            transition: 'all 0.2s',
-            color: '#888'
+            cursor: isProcessing() ? 'wait' : 'pointer', 
+            background: isProcessing() ? '#1a1a1a' : '#161616', 
+            transition: 'all 0.2s', 
+            color: '#888' 
           }}>
             <div style={{ fontSize: '20px', marginBottom: '8px', opacity: 0.7 }}>📥</div>
             <div style={{ fontSize: '12px', fontWeight: '500', color: '#ccc' }}>
@@ -134,37 +132,28 @@ function App() {
           </label>
         </div>
 
-        {/* Console */}
         <LogConsole logs={logs} />
       </div>
 
       {/* 2. CENTER STAGE */}
       <div class="center-stage">
-        {/* Top Bar Info */}
+        {/* Info Bar oben */}
         <div style={{ 
           height: '40px', 
           borderBottom: '1px solid #222', 
           display: 'flex', 
           alignItems: 'center', 
-          justifyContent: 'center',
+          justifyContent: 'center', 
           color: '#444', 
-          fontSize: '11px',
-          fontFamily: 'monospace',
-          flexShrink: 0 // Verhindert, dass die Top-Bar schrumpft
+          fontSize: '11px', 
+          fontFamily: 'monospace', 
+          flexShrink: 0 
         }}>
           {currentBundleName() || "WARTE AUF EINGABE"}
         </div>
 
-        {/* Image Stage */}
-        <div style={{ 
-          flex: 1, 
-          position: 'relative', 
-          overflow: 'hidden',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}>
+        {/* Image Stage mit absoluter Positionierung */}
+        <div class="preview-stage">
           <Show when={previewUrl()} fallback={
             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#222', fontSize: '12px' }}>
               Keine Vorschau
@@ -173,14 +162,7 @@ function App() {
             <img 
               src={previewUrl()} 
               alt="Preview" 
-              style={{ 
-                maxWidth: '100%', 
-                maxHeight: '100%', 
-                objectFit: 'contain',
-                display: 'block',
-                borderRadius: '4px',
-                boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
-              }} 
+              class="preview-image"
             />
           </Show>
         </div>
@@ -201,7 +183,6 @@ function App() {
             <div style={{ fontSize: '10px', color: '#999', lineHeight: '1.4' }}>
               Simulierte Extraktion aus RAW aktiv.
             </div>
-            
             <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #333', fontSize: '9px', color: '#666', fontFamily: 'monospace' }}>
               <div style={{display:'flex', justifyContent:'space-between'}}><span>Input:</span> <span style={{color:'#888'}}>NEF (D610)</span></div>
               <div style={{display:'flex', justifyContent:'space-between', marginTop:'2px'}}><span>Proxy:</span> <span style={{color:'#888'}}>JPG (Embed)</span></div>

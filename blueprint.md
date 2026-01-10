@@ -1,33 +1,43 @@
-# Lumina Ingest Test - Blueprint
+# Lumina CoreBrain Ingest - Blueprint v0.2
 
 ## Overview
+This is the MVP (Minimum Viable Product) for the **Lumina CoreBrain** ingestion pipeline. It shifts from a simple file uploader to a professional "Asset Bundle" workflow. The application simulates a raw-converter environment by ingesting RAW files (NEF) alongside pre-generated proxies (JPG) to verify the data architecture without heavy browser-side processing.
 
-This is a simple web application for testing the Lumina asset ingestion pipeline. It allows a user to upload an image file (JPG or NEF) and view the processing logs. The application focuses purely on the core upload and processing functionality.
+## Core Features (v0.2)
 
-## Features
+* **Asset Bundle Ingest:** Recognizes and pairs Master files (`.NEF`) with Proxy files (`.jpg`) automatically.
+* **Simulated RAW Extraction:** Uses the uploaded JPG as a "Smart Proxy" for the UI to bypass browser RAW rendering limitations.
+* **XMP Sidecar Generation:** Automatically generates Adobe-compatible `.xmp` sidecar files containing EXIF data and (placeholder) ratings.
+* **Structured Cloud Storage:** Assets are stored in organized subfolders (`assets/{filename}/{files...}`) containing the Master, Proxy, and Sidecar.
+* **Professional UI:** A responsive 3-column layout (Sidebar/Stage/Info) optimized for image viewing without layout shifts.
 
-*   **Image Upload:** Users can directly upload an image file (JPG, NEF, etc.) without needing to log in.
-*   **Visual Upload Progress:** A progress bar and percentage display provide real-time feedback during file uploads.
-*   **EXIF Data Extraction:** The application extracts EXIF data from the uploaded image, specifically the camera model.
-*   **Cloud Storage:** The image is uploaded to a general `uploads/` folder in Firebase Storage.
-*   **Database Entry:** A record of the uploaded asset is created in Firestore, including the filename, storage URL, camera model, ISO, and upload timestamp.
-*   **Real-time Logging:** The application displays a real-time log of the entire ingestion process.
+## Technical Architecture
+
+* **Logic Engine:** `CoreBrain.js` - A headless service that orchestrates file matching, XMP generation, and parallel cloud uploads.
+* **Frontend:** SolidJS with CSS Grid & Flexbox.
+* **Layout Strategy:** Fixed sidebars with a flexible center stage using absolute positioning to handle high-resolution image aspect ratios correctly.
 
 ## Development Log
 
-### Task: Focus on Core Ingest Pipeline (Completed)
+### Phase 1: Foundation (Completed)
+* **Auth Removal:** Removed blocking authentication to focus on data flow.
+* **CORS & Config:** Fixed Firebase Storage bucket configuration and CORS policies.
 
-1.  **Initial Problem:** The implementation of Firebase Authentication was blocking development due to complex configuration issues.
-2.  **Strategic Decision:** Authentication was temporarily removed to focus on the core ingest pipeline.
-3.  **Roadblock:** File uploads failed silently due to two issues:
-    *   **CORS Policy:** Firebase Storage was blocking requests from the web preview's origin. This was resolved by setting a CORS policy on the Storage Bucket using `gsutil`.
-    *   **Incorrect Bucket Name:** The client-side Firebase configuration (`firebase.js`) was pointing to an incorrect `storageBucket` URL (`...appspot.com` instead of `...firebasestorage.app`).
-4.  **Resolution:** Both the server-side CORS policy and the client-side configuration were corrected, enabling successful uploads.
-5.  **New Feature:** An upload progress bar was added to provide visual feedback for large files.
-6.  **Outcome:** The core ingestion pipeline for both JPG and RAW (NEF) files is now fully functional and robust.
+### Phase 2: CoreBrain Pipeline (Completed - Current)
+* **Strategic Shift:** Moved from single-file ingest to **Asset Bundles**.
+* **Data Integrity:** Implemented a workflow where the NEF (Master) remains untouched, while a JPG serves as the visual proxy.
+* **Round-Trip Readiness:** Implemented `XmpService` to generate standard XML sidecars, ensuring compatibility with Lightroom/Capture One.
+* **UI Overhaul:** Replaced the debug console with a "Darkroom" style interface:
+    * **Left:** Ingest controls & real-time System Protocol.
+    * **Center:** Responsive Image Stage (fixed CSS overflow issues via absolute positioning).
+    * **Right:** Status Monitor & Asset Metadata.
 
-## Current Task: AI-Powered Image Analysis
+## Next Steps: Intelligence Layer
 
-*   **Next Step:** Integrate Gemini AI to perform an automated analysis of the uploaded image.
-*   **Goal:** After a successful upload, trigger an AI function (`analyzeImageWithPro`) that provides a brief, actionable recommendation for improving the photo's light or composition.
-*   **Implementation:** The result of the analysis will be displayed in the system log.
+* **Goal:** Activate the "Brain" in CoreBrain.
+* **Action:** Re-integrate the **Gemini AI Service**.
+* **Workflow:**
+    1.  Send the *Proxy JPG* (not the RAW) to Gemini.
+    2.  Receive Technical Score (0-100) and Recommendation.
+    3.  Inject these values into the `.xmp` file before upload.
+    4.  Visualize the Score in the UI.
