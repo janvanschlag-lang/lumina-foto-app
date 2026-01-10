@@ -1,43 +1,49 @@
-# Lumina CoreBrain Ingest - Blueprint v0.2
+# Lumina CoreBrain Ingest - Blueprint v0.2.1
 
 ## Overview
-This is the MVP (Minimum Viable Product) for the **Lumina CoreBrain** ingestion pipeline. It shifts from a simple file uploader to a professional "Asset Bundle" workflow. The application simulates a raw-converter environment by ingesting RAW files (NEF) alongside pre-generated proxies (JPG) to verify the data architecture without heavy browser-side processing.
+This is the operational MVP for the **Lumina CoreBrain** ingestion pipeline. It implements a professional "Asset Bundle" workflow, treating RAW files (Masters) and JPGs (Proxies) as logical units. The application reads authentic EXIF data directly from the RAW binary in the browser and synchronizes the complete asset bundle (Master + Proxy + XMP Sidecar) to the cloud.
 
-## Core Features (v0.2)
+## Core Features (Live)
 
-* **Asset Bundle Ingest:** Recognizes and pairs Master files (`.NEF`) with Proxy files (`.jpg`) automatically.
-* **Simulated RAW Extraction:** Uses the uploaded JPG as a "Smart Proxy" for the UI to bypass browser RAW rendering limitations.
-* **XMP Sidecar Generation:** Automatically generates Adobe-compatible `.xmp` sidecar files containing EXIF data and (placeholder) ratings.
-* **Structured Cloud Storage:** Assets are stored in organized subfolders (`assets/{filename}/{files...}`) containing the Master, Proxy, and Sidecar.
-* **Professional UI:** A responsive 3-column layout (Sidebar/Stage/Info) optimized for image viewing without layout shifts.
+* **Asset Bundle Ingest:** Automatically detects, matches, and processes pairs of Master (`.NEF`) and Proxy (`.jpg`) files.
+* **True RAW Intelligence:** Uses `ExifReader` to extract authentic metadata (ISO, Aperture, Shutter, Lens) directly from the NEF binary, not the sidecar.
+* **Simulated Extraction Workflow:** Bypasses browser RAW rendering limitations by using the provided JPG as a "Smart Proxy" for instant visual feedback.
+* **XMP Sidecar Generation:** Automatically creates Adobe-standard `.xmp` files containing the extracted technical metadata.
+* **Darkroom UI:**
+    * **Left Panel:** Ingest controls and real-time system protocol.
+    * **Center Stage:** Distortion-free image viewer with intelligent "letterboxing" for high-res assets.
+    * **Right Panel:** Dual-mode Status Monitor showing pipeline state and live EXIF readouts.
 
 ## Technical Architecture
 
-* **Logic Engine:** `CoreBrain.js` - A headless service that orchestrates file matching, XMP generation, and parallel cloud uploads.
-* **Frontend:** SolidJS with CSS Grid & Flexbox.
-* **Layout Strategy:** Fixed sidebars with a flexible center stage using absolute positioning to handle high-resolution image aspect ratios correctly.
+* **Logic Engine:** `CoreBrain.js` (Headless Service)
+    * Orchestrates file pairing.
+    * Extracts EXIF.
+    * Generates XMP strings.
+    * Manages parallel uploads to Firebase Storage (`assets/{filename}/...`).
+* **Frontend:** SolidJS
+    * Uses Signals for reactive state management.
+    * Implements a 3-column CSS Grid layout with absolute positioning for robust image scaling.
+* **Data Model:** Firestore `assets` collection stores references to rawUrl, previewUrl, xmpUrl, and structured `exif` data.
 
 ## Development Log
 
 ### Phase 1: Foundation (Completed)
-* **Auth Removal:** Removed blocking authentication to focus on data flow.
-* **CORS & Config:** Fixed Firebase Storage bucket configuration and CORS policies.
+* Auth removal for rapid prototyping.
+* Firebase Storage CORS & Bucket configuration fixed.
 
-### Phase 2: CoreBrain Pipeline (Completed - Current)
-* **Strategic Shift:** Moved from single-file ingest to **Asset Bundles**.
-* **Data Integrity:** Implemented a workflow where the NEF (Master) remains untouched, while a JPG serves as the visual proxy.
-* **Round-Trip Readiness:** Implemented `XmpService` to generate standard XML sidecars, ensuring compatibility with Lightroom/Capture One.
-* **UI Overhaul:** Replaced the debug console with a "Darkroom" style interface:
-    * **Left:** Ingest controls & real-time System Protocol.
-    * **Center:** Responsive Image Stage (fixed CSS overflow issues via absolute positioning).
-    * **Right:** Status Monitor & Asset Metadata.
+### Phase 2: CoreBrain Pipeline (Completed)
+* **Strategic Shift:** Moved from single-file ingest to Asset Bundles.
+* **Round-Trip Readiness:** Implemented XMP generation to ensure compatibility with professional tools (Lightroom).
+* **Visualization:** Implemented a robust "Status Monitor" that displays real technical readouts (e.g., "Nikon D610, 300mm, f/5.6") to verify data integrity before upload.
+* **Layout Fix:** Solved CSS Grid/Flexbox overflow issues using a `position: absolute` strategy for the center stage.
 
-## Next Steps: Intelligence Layer
+## Next Steps: Intelligence Layer (Phase 3)
 
-* **Goal:** Activate the "Brain" in CoreBrain.
-* **Action:** Re-integrate the **Gemini AI Service**.
+* **Goal:** Activate the AI analysis.
+* **Action:** Integrate `geminiService.js`.
 * **Workflow:**
-    1.  Send the *Proxy JPG* (not the RAW) to Gemini.
-    2.  Receive Technical Score (0-100) and Recommendation.
-    3.  Inject these values into the `.xmp` file before upload.
-    4.  Visualize the Score in the UI.
+    1.  Pass the *Proxy JPG* to Gemini 1.5 Flash.
+    2.  Prompt: "Analyze lighting and composition. Provide a technical score (0-100) and a short recommendation."
+    3.  Inject the Score/Recommendation into the `.xmp` sidecar (Rating/UserComment).
+    4.  Visualize the Score in the UI Status Monitor.

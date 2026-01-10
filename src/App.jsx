@@ -41,6 +41,7 @@ function App() {
   const [isProcessing, setIsProcessing] = createSignal(false);
   const [previewUrl, setPreviewUrl] = createSignal(null);
   const [currentBundleName, setCurrentBundleName] = createSignal("");
+  const [activeExif, setActiveExif] = createSignal(null);
 
   const addLog = (text, type = 'info') => {
     setLogs(prev => [{ text, type, time: new Date().toLocaleTimeString() }, ...prev]);
@@ -53,6 +54,7 @@ function App() {
     setIsProcessing(true);
     setLogs([]); 
     setPreviewUrl(null);
+    setActiveExif(null);
     setCurrentBundleName("");
     
     const nefs = files.filter(f => f.name.toLowerCase().endsWith('.nef'));
@@ -64,7 +66,7 @@ function App() {
       return;
     }
 
-    addLog(`Batch Start: ${nefs.length} RAWs + ${jpgs.length} JPGs.`, 'info');
+    addLog(`Batch: ${nefs.length} RAWs + ${jpgs.length} JPGs.`, 'info');
 
     for (const rawFile of nefs) {
       setCurrentBundleName(rawFile.name);
@@ -72,17 +74,18 @@ function App() {
       const previewFile = jpgs.find(j => j.name.includes(baseName));
 
       if (!previewFile) {
-        addLog(`SKIP: ${rawFile.name} (Kein JPG Partner)`, 'error');
+        addLog(`SKIP: ${rawFile.name} (Kein JPG)`, 'error');
         continue;
       }
 
       setPreviewUrl(URL.createObjectURL(previewFile));
       addLog(`⚡ Verarbeite: ${rawFile.name}`, 'process');
 
-      const success = await processAssetBundle(rawFile, previewFile, (msg) => addLog(msg, 'process'));
+      const result = await processAssetBundle(rawFile, previewFile, (msg) => addLog(msg, 'process'));
 
-      if (success) {
+      if (result.success) {
         addLog(`✅ Archiviert: ${baseName}`, 'success');
+        setActiveExif(result.data);
       } else {
         addLog(`❌ Fehler: ${baseName}`, 'error');
       }
@@ -102,32 +105,10 @@ function App() {
         </div>
 
         <div style={{ padding: '16px' }}>
-          <input 
-            type="file" 
-            id="fileInput" 
-            multiple 
-            onChange={handleBundleIngest} 
-            style={{ display: 'none' }} 
-            accept=".nef,.dng,.jpg,.jpeg" 
-            disabled={isProcessing()}
-          />
-          <label htmlFor="fileInput" style={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            height: '120px', 
-            border: '1px dashed #444', 
-            borderRadius: '6px', 
-            cursor: isProcessing() ? 'wait' : 'pointer', 
-            background: isProcessing() ? '#1a1a1a' : '#161616', 
-            transition: 'all 0.2s', 
-            color: '#888' 
-          }}>
+          <input type="file" id="fileInput" multiple onChange={handleBundleIngest} style={{ display: 'none' }} accept=".nef,.dng,.jpg,.jpeg" disabled={isProcessing()}/>
+          <label htmlFor="fileInput" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '120px', border: '1px dashed #444', borderRadius: '6px', cursor: isProcessing() ? 'wait' : 'pointer', background: isProcessing() ? '#1a1a1a' : '#161616', transition: 'all 0.2s', color: '#888' }}>
             <div style={{ fontSize: '20px', marginBottom: '8px', opacity: 0.7 }}>📥</div>
-            <div style={{ fontSize: '12px', fontWeight: '500', color: '#ccc' }}>
-              {isProcessing() ? "Pipeline läuft..." : "Bundle Importieren"}
-            </div>
+            <div style={{ fontSize: '12px', fontWeight: '500', color: '#ccc' }}>{isProcessing() ? "Pipeline läuft..." : "Bundle Importieren"}</div>
             <div style={{ fontSize: '9px', marginTop: '4px', opacity: 0.5 }}>NEF + JPG wählen</div>
           </label>
         </div>
@@ -137,57 +118,82 @@ function App() {
 
       {/* 2. CENTER STAGE */}
       <div class="center-stage">
-        {/* Info Bar oben */}
-        <div style={{ 
-          height: '40px', 
-          borderBottom: '1px solid #222', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
-          color: '#444', 
-          fontSize: '11px', 
-          fontFamily: 'monospace', 
-          flexShrink: 0 
-        }}>
+        <div style={{ height: '40px', borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444', fontSize: '11px', fontFamily: 'monospace', flexShrink: 0 }}>
           {currentBundleName() || "WARTE AUF EINGABE"}
         </div>
-
-        {/* Image Stage mit absoluter Positionierung */}
         <div class="preview-stage">
           <Show when={previewUrl()} fallback={
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#222', fontSize: '12px' }}>
-              Keine Vorschau
-            </div>
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#222', fontSize: '12px' }}>Keine Vorschau</div>
           }>
-            <img 
-              src={previewUrl()} 
-              alt="Preview" 
-              class="preview-image"
-            />
+            <img src={previewUrl()} alt="Preview" class="preview-image" />
           </Show>
         </div>
       </div>
 
-      {/* 3. RIGHT SIDEBAR */}
+      {/* 3. RIGHT SIDEBAR - KOMBINIERT */}
       <div class="right-sidebar">
-        <div style={{ color: '#555', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '15px', fontWeight: 'bold' }}>
-          Status Monitor
-        </div>
+        <div style={{ color: '#555', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '15px', fontWeight: 'bold' }}>Status Monitor</div>
         
         <Show when={isProcessing() || previewUrl()}>
           <div style={{ background: '#161616', borderRadius: '4px', padding: '12px', border: '1px solid #222' }}>
-            <div style={{ fontSize: '11px', color: '#fff', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4f4', boxShadow: '0 0 5px #4f4' }}></div>
-              Active Pipeline
+            
+            {/* 1. PIPELINE STATUS (Wiederhergestellt!) */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', color: '#fff', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4f4', boxShadow: '0 0 5px #4f4' }}></div>
+                Active Pipeline
+              </div>
+              <div style={{ fontSize: '10px', color: '#999', lineHeight: '1.4' }}>
+                Simulierte Extraktion aus RAW aktiv.
+              </div>
+              <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #333', fontSize: '9px', color: '#666', fontFamily: 'monospace' }}>
+                <div style={{display:'flex', justifyContent:'space-between'}}><span>Input:</span> <span style={{color:'#888'}}>NEF (D610)</span></div>
+                <div style={{display:'flex', justifyContent:'space-between', marginTop:'2px'}}><span>Proxy:</span> <span style={{color:'#888'}}>JPG (Embed)</span></div>
+                <div style={{display:'flex', justifyContent:'space-between', marginTop:'2px'}}><span>Engine:</span> <span style={{color:'#888'}}>CoreBrain</span></div>
+              </div>
             </div>
-            <div style={{ fontSize: '10px', color: '#999', lineHeight: '1.4' }}>
-              Simulierte Extraktion aus RAW aktiv.
-            </div>
-            <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #333', fontSize: '9px', color: '#666', fontFamily: 'monospace' }}>
-              <div style={{display:'flex', justifyContent:'space-between'}}><span>Input:</span> <span style={{color:'#888'}}>NEF (D610)</span></div>
-              <div style={{display:'flex', justifyContent:'space-between', marginTop:'2px'}}><span>Proxy:</span> <span style={{color:'#888'}}>JPG (Embed)</span></div>
-              <div style={{display:'flex', justifyContent:'space-between', marginTop:'2px'}}><span>Engine:</span> <span style={{color:'#888'}}>CoreBrain</span></div>
-            </div>
+
+            {/* 2. ECHTE EXIF DATEN (Nur wenn fertig) */}
+            <Show when={activeExif()}>
+              <div style={{ marginTop: '16px', borderTop: '1px solid #333', paddingTop: '12px' }}>
+                <div style={{ fontSize: '9px', color: '#555', marginBottom: '8px', textTransform:'uppercase', fontWeight: 'bold' }}>RAW Metadaten</div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 4px' }}>
+                  
+                  {/* Kamera */}
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <div style={{ fontSize: '9px', color: '#666' }}>Camera</div>
+                    <div style={{ fontSize: '11px', color: '#e5e5e5', fontWeight:'500' }}>{activeExif().model}</div>
+                  </div>
+
+                  {/* Lens */}
+                  <div style={{ gridColumn: 'span 2', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '9px', color: '#666' }}>Lens</div>
+                    <div style={{ fontSize: '11px', color: '#ccc' }}>{activeExif().lens}</div>
+                  </div>
+
+                  {/* ISO */}
+                  <div>
+                    <div style={{ fontSize: '9px', color: '#666' }}>ISO</div>
+                    <div style={{ fontSize: '11px', color: '#ccc', fontFamily: 'monospace' }}>{activeExif().iso}</div>
+                  </div>
+
+                  {/* Blende */}
+                  <div>
+                    <div style={{ fontSize: '9px', color: '#666' }}>Aperture</div>
+                    <div style={{ fontSize: '11px', color: '#ccc', fontFamily: 'monospace' }}>{activeExif().aperture}</div>
+                  </div>
+
+                  {/* Zeit */}
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <div style={{ fontSize: '9px', color: '#666' }}>Shutter</div>
+                    <div style={{ fontSize: '11px', color: '#ccc', fontFamily: 'monospace' }}>{activeExif().shutter}</div>
+                  </div>
+
+                </div>
+              </div>
+            </Show>
+
           </div>
         </Show>
 
