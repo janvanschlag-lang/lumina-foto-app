@@ -1,99 +1,126 @@
 import { createSignal, createEffect, onCleanup, For, Show } from 'solid-js';
 import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
-import { db } from '../firebase'; // Hier ist ../ korrekt!
+import { db } from '../firebase';
+
+// SUID Imports
+import { 
+  Box, Card, CardMedia, CardContent, Typography, 
+  Chip, Grid, CircularProgress, Stack 
+} from "@suid/material";
+
+// Icons
+import CheckCircleIcon from "@suid/icons-material/CheckCircle";
+import CancelIcon from "@suid/icons-material/Cancel";
+import HelpIcon from "@suid/icons-material/Help";
+import StarIcon from "@suid/icons-material/Star";
 
 const Gallery = (props) => {
   const [assets, setAssets] = createSignal([]);
   const [loading, setLoading] = createSignal(true);
 
+  // --- LIVE DATA LISTENER ---
   createEffect(() => {
-    const q = query(
-      collection(db, "assets"),
-      orderBy("captureDate", "desc"),
-      limit(50)
-    );
-
+    const q = query(collection(db, "assets"), orderBy("captureDate", "desc"), limit(50));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedAssets = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const loadedAssets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAssets(loadedAssets);
       setLoading(false);
-    }, (error) => {
-      console.error("Gallery Error:", error);
-      setLoading(false);
-    });
-
+    }, (error) => { console.error(error); setLoading(false); });
     onCleanup(() => unsubscribe());
   });
 
-  const renderStars = (rating) => "★".repeat(rating || 0) + "☆".repeat(5 - (rating || 0));
-
   return (
-    <div style={{ padding: '20px', height: '100%', boxSizing: 'border-box', overflowY: 'auto' }}>
+    <Box sx={{ 
+      padding: 2, 
+      height: '100%', 
+      overflowY: 'auto',
+      display: 'flex', 
+      flexDirection: 'column' 
+    }}>
       
-      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>
+      {/* HEADER */}
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
+        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1, fontWeight: 'bold' }}>
           Library Stream ({assets().length})
-        </div>
-      </div>
+        </Typography>
+      </Stack>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' }}>
+      {/* CONTENT */}
+      <Show when={!loading()} fallback={
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+          <CircularProgress color="inherit" size={24} />
+        </Box>
+      }>
         
-        {/* WICHTIG: loading() muss als Funktion aufgerufen werden! */}
-        <Show when={!loading()} fallback={<div style={{ color: '#444', fontSize: '11px' }}>Lade Assets...</div>}>
+        {/* GRID */}
+        <Grid container spacing={2}>
           <For each={assets()}>{(asset) => (
-            <div 
-              onClick={() => props.onSelect(asset)}
-              style={{ 
-                background: '#161616', 
-                border: props.selectedId === asset.id ? '1px solid #eee' : '1px solid #333',
-                borderRadius: '6px', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.1s', position: 'relative'
-              }}
-            >
-              
-              <div style={{ aspectRatio: '3/2', background: '#222', position: 'relative' }}>
-                <Show when={asset.urls && asset.urls.preview} fallback={<div style={{height:'100%', width:'100%', background:'#222'}}></div>}>
-                  <img src={asset.urls.preview} loading="lazy" alt={asset.filename} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </Show>
-                
-                {/* Flags */}
-                <div style={{ position: 'absolute', top: '6px', left: '6px' }}>
-                   <Show when={asset.verdict?.flag === 'pick'}>
-                     <div style={{ width:'14px', height:'14px', borderRadius:'50%', background:'#eee', color:'#000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'9px', boxShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>✓</div>
-                   </Show>
-                   <Show when={asset.verdict?.flag === 'reject'}>
-                     <div style={{ width:'14px', height:'14px', borderRadius:'50%', background:'#f44', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'9px', boxShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>✕</div>
-                   </Show>
-                </div>
-
-                {/* Score */}
-                <Show when={asset.verdict?.score}>
-                  <div style={{ position: 'absolute', bottom: '4px', right: '4px', background: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: '9px', padding: '2px 4px', borderRadius: '3px', fontFamily: 'monospace' }}>
-                    {asset.verdict.score}
-                  </div>
-                </Show>
-              </div>
-
-              {/* Info Footer */}
-              <div style={{ padding: '8px' }}>
-                <div style={{ fontSize: '10px', color: '#ccc', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {asset.filename}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: '9px', color: '#ffd700' }}>{renderStars(asset.verdict?.rating)}</div>
-                  <Show when={asset.aiAnalysis?.color_analysis?.cast_detected}>
-                    <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#fb4' }} title="Color Cast"></div>
+            <Grid item xs={6} sm={4} md={3} lg={2} xl={2}> 
+              <Card 
+                onClick={() => props.onSelect(asset)}
+                sx={{ 
+                  cursor: 'pointer', 
+                  position: 'relative',
+                  border: 1,
+                  borderColor: props.selectedId === asset.id ? 'primary.main' : 'divider',
+                  transition: 'all 0.2s',
+                  '&:hover': { transform: 'translateY(-2px)', borderColor: 'text.primary', boxShadow: 4 }
+                }}
+              >
+                {/* IMAGE AREA */}
+                <Box sx={{ position: 'relative', aspectRatio: '3/2', bgcolor: 'background.paper' }}>
+                  <Show when={asset.urls && asset.urls.preview} fallback={<Box sx={{width:'100%', height:'100%', bgcolor:'#222'}} />}>
+                    <CardMedia
+                      component="img"
+                      image={asset.urls.preview}
+                      alt={asset.filename}
+                      sx={{ height: '100%', width: '100%', objectFit: 'cover' }}
+                    />
                   </Show>
-                </div>
-              </div>
+                  
+                  {/* FLAG OVERLAY */}
+                  <Box sx={{ position: 'absolute', top: 6, left: 6, display: 'flex', gap: 0.5 }}>
+                    <Show when={asset.verdict?.flag === 'pick'}>
+                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '1rem !important' }} />} label="PICK" color="success" size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} />
+                    </Show>
+                    <Show when={asset.verdict?.flag === 'reject'}>
+                      <Chip icon={<CancelIcon sx={{ fontSize: '1rem !important' }} />} label="REJECT" color="error" size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} />
+                    </Show>
+                    <Show when={asset.verdict?.flag === 'review'}>
+                      <Chip icon={<HelpIcon sx={{ fontSize: '1rem !important' }} />} label="REVIEW" color="warning" size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} />
+                    </Show>
+                  </Box>
 
-            </div>
+                  {/* SCORE BADGE */}
+                  <Show when={asset.verdict?.score}>
+                    <Box sx={{ position: 'absolute', bottom: 4, right: 4, bgcolor: 'rgba(0,0,0,0.85)', color: 'white', borderRadius: 1, px: 0.6, py: 0.1, fontSize: '0.7rem', fontFamily: 'monospace', fontWeight: 'bold', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      {asset.verdict.score}
+                    </Box>
+                  </Show>
+                </Box>
+
+                {/* CARD FOOTER */}
+                <CardContent sx={{ padding: '8px 10px !important', bgcolor: 'background.paper' }}>
+                  <Typography variant="body2" noWrap color="text.secondary" sx={{ fontSize: '0.7rem', mb: 0.5 }}>
+                    {asset.filename}
+                  </Typography>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Stack direction="row" alignItems="center" spacing={0.2}>
+                      <StarIcon sx={{ fontSize: 12, color: 'warning.main' }} />
+                      <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold', fontSize: '0.75rem' }}>{asset.verdict?.rating || 0}</Typography>
+                    </Stack>
+                    <Show when={asset.aiAnalysis?.color_analysis?.cast_detected}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'warning.main', boxShadow: '0 0 4px rgba(251, 191, 36, 0.5)' }} title="Color Cast detected" />
+                    </Show>
+                  </Stack>
+                </CardContent>
+
+              </Card>
+            </Grid>
           )}</For>
-        </Show>
-      </div>
-    </div>
+        </Grid>
+      </Show>
+    </Box>
   );
 };
 
