@@ -1,49 +1,79 @@
-# Lumina CoreBrain Ingest - Blueprint v0.3 (AI Powered)
+# Lumina CoreBrain Ingest - Blueprint v0.4 (AI Vision & Deep XMP)
 
-## Overview
-This is the **AI-integrated MVP** for the Lumina ingestion pipeline. It features a fully automated "Hybrid Ingest" workflow:
-1.  **Hard Facts:** Extracts technical metadata (EXIF) directly from RAW files.
-2.  **Soft Skills:** Uses **Gemini 2.5 Flash** to visually analyze the image content.
-3.  **Synthesis:** Merges both into a professional, Adobe-compliant XMP sidecar file including automated keywords.
+**Date:** 2026-01-10
+**Status:** Phase 3 Completed (Intelligence Layer Active)
+**Model:** Gemini 2.5 Flash (Stable)
 
-## Core Features (Live)
+## 1. Overview
+Lumina CoreBrain is now a **Hybrid Intelligent Ingest System**. It moves beyond simple file copying by acting as an automated "Computer Vision Analyst". It pairs RAW files with JPG proxies, extracts deep technical data, and uses Google's Gemini 2.5 Flash model to "see" and describe image content, writing the results into professional, Lightroom-compliant XMP sidecars.
 
-* **Hybrid Asset Bundle:** Processes Master (`.NEF`) + Proxy (`.jpg`) + Smart Sidecar (`.xmp`) as one unit.
-* **Gemini Vision Integration:**
-    * Model: `gemini-2.5-flash` (via Google AI Studio).
-    * Task: Semantic image analysis for stock photography.
-    * Output: 10-15 precise, English-only keywords (e.g., "Mallard", "Iridescent", "Motion").
-* **Smart XMP Generation:**
-    * **Deep Metadata:** Writes Exposure, ISO, White Balance, Metering Mode.
-    * **Lens Intelligence:** Calculates lens data (e.g., "300 mm f/5.7") even if specific MakerNotes are missing.
-    * **Compatibility:** Includes `tiff:Orientation` and `exif:ColorSpace` for correct rendering in Lightroom.
-    * **Taxonomy:** Writes AI keywords into standard Dublin Core (`dc:subject`) containers.
-* **Real-time UI:**
-    * Visual "Status Monitor" displaying live EXIF data.
-    * Green "AI Tags" visualization immediately after analysis.
+## 2. Core Features (Live)
 
-## Technical Architecture
+### A. Intelligent Analysis (Gemini 2.5 Flash)
+* **Role:** "High-precision Computer Vision System" (Prompt Engineering).
+* **Capabilities:**
+    * **Semantic Keywords:** Generates 10-15 English-only keywords (e.g., "Mallard", "Iridescent", "Motion").
+    * **Visual Analysis:** Structured assessment of Subject, Lighting, Composition, and Technical Quality.
+    * **Deduplication:** Strict "English Only" policy to prevent multi-language tag clutter.
+* **Model Strategy:** Uses `gemini-2.5-flash` (Multimodal Analyst) instead of `-image` variants to avoid generative quotas and focus on factual description.
 
-* **Service Layer:**
-    * `CoreBrain.js`: Orchestrator. Manages file pairing, EXIF extraction (`exifreader`), and Firestore syncing.
-    * `geminiService.js`: Intelligence. Handles Base64 conversion, API communication, and JSON parsing/validation.
-* **AI Strategy:** Uses the "Analyst" approach (Gemini Flash) to generate structured JSON data, which is then safely injected into XMP by the application logic.
-* **Data Model:** Firestore stores a clean separation of `{ exif: ..., ai: { keywords: [...] } }`.
+### B. Smart XMP Generation (The "Golden File")
+The system generates complex XMP sidecars (`.xmp`) that map AI and EXIF data to standard Adobe/IPTC fields:
+* **`dc:subject` (Keywords):** AI Keywords stored in an `rdf:Bag` container.
+* **`dc:description` (Caption):** Auto-generated caption from the AI's subject analysis.
+* **`xmp:UserComment` (Vision Report):** A structured text block containing the full AI analysis (Lighting, Composition, Tech Check).
+* **`aux:Lens`:** Intelligent formatting of lens data (e.g., "300 mm f/5.7").
+* **`tiff:Orientation` & `exif:ColorSpace`:** Critical tags for correct image rendering in external DAMs.
 
-## Development Log
+### C. Real-time UI
+* **Status Monitor:** Displays live EXIF data (ISO, Shutter, Aperture).
+* **AI Visualization:** Shows the Top 3 AI-detected keywords immediately after processing.
+* **Logs:** Detailed protocol of the ingest pipeline (EXIF read -> AI Analysis -> XMP Write).
 
-### Phase 1 & 2: Foundation (Completed)
-* Established RAW/JPG pairing and basic EXIF extraction.
-* Implemented "Deep Metadata" extraction (Focus Distance, DateTime, Exposure Mode).
+## 3. Technical Architecture
 
-### Phase 3: Intelligence Layer (Completed - Current)
-* **Model Selection:** Evaluated `gemini-2.5-flash-image` vs. `gemini-2.5-flash`. Chose standard **Flash** to avoid "Nano Banana" generation quotas and focus on pure analysis.
-* **Language Strategy:** Switched from mixed-language to **English Only** to prevent keyword duplication and ensure international stock compatibility.
-* **Robustness:** Implemented fallback logic for XMP generation (handling `undefined` values for FocusDistance/Date) to prevent pipeline crashes.
-* **Result:** Successfully generated XMP files with rich semantic tagging (e.g., "Iridescent", "Green Head").
+* **`CoreBrain.js` (Orchestrator):**
+    * Manages the file triplet: RAW + Preview + XMP.
+    * Handles data fusion: Merges `exifReader` results with `geminiService` JSON.
+    * **Safety:** Implements robust fallback logic (e.g., converting `undefined` focus distances to `null`) to prevent Firestore crashes.
+* **`geminiService.js` (Brain):**
+    * **Input:** Base64 encoded JPG proxy.
+    * **Prompting:** Enforces strict JSON output (`{ keywords: [], analysis: {} }`) to ensure machine-readability.
+    * **Resilience:** Handles JSON parsing errors and API fallbacks gracefully.
+* **Data Model (Firestore):**
+    * Collection: `assets`
+    * Structure:
+        ```json
+        {
+          "filename": "_DSC4667.NEF",
+          "exif": { ...technical_data... },
+          "ai": {
+            "keywords": ["Mallard", "Water", ...],
+            "analysis": {
+              "subject": "...",
+              "lighting": "...",
+              "technical": "..."
+            }
+          },
+          "urls": { ... }
+        }
+        ```
 
-## Next Steps: Asset Management (Phase 4)
+## 4. Development Log
 
-* **Goal:** Move from "Ingest" to "Library".
-* **Action:** Create a Gallery View to browse uploaded assets.
-* **Features:** Filter by AI Keywords (e.g., show all "Ducks"), Sort by Date, View technical details.
+* **Phase 1: Foundation (Done)** - Basic RAW/JPG pairing and upload.
+* **Phase 2: Deep Metadata (Done)** - Extraction of Nikon specific tags (FocusDistance, Metering).
+* **Phase 3: Intelligence Layer (COMPLETED)**
+    * Migrated to **Gemini 2.5 Flash** (Stable).
+    * Implemented "Computer Vision" prompt for factual analysis.
+    * Solved `429 Quota Exceeded` issues by selecting the correct model alias.
+    * Successfully wrote rich XMP with Description and UserComments.
+    * Validated Lightroom compatibility (Subject, Orientation, Lens).
+
+## 5. Next Steps: Phase 4 (The Library)
+
+* **Goal:** Visualize the ingested data.
+* **Task:** Build a **Gallery View**.
+* **Features:**
+    * Grid layout of uploaded assets.
+    * Filter functionality (e.g., "Show me all 'Ducks'").

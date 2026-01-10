@@ -4,10 +4,9 @@ import { storage, db } from '../firebase';
 import ExifReader from 'exifreader';
 import { analyzeImageWithPro } from './geminiService';
 
-// --- XMP GENERATOR ---
+// --- XMP GENERATOR (Mit Description & Full Report) ---
 const createXmpContent = (data) => {
   const rating = data.rating || 0;
-  const label = "";
   
   // 1. Keywords (AI)
   let subjectBlock = "";
@@ -21,7 +20,35 @@ const createXmpContent = (data) => {
    </dc:subject>`;
   }
 
-  // 2. Datum
+  // 2. AI Analyse & Description (NEU!)
+  let descriptionBlock = "";
+  let userComment = "Imported by Lumina Pipeline"; // Default
+
+  if (data.analysis) {
+    // A) Caption / Description für Lightroom (Nimmt das Hauptmotiv)
+    if (data.analysis.subject) {
+      descriptionBlock = `
+   <dc:description>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">${data.analysis.subject}</rdf:li>
+    </rdf:Alt>
+   </dc:description>`;
+    }
+
+    // B) Detaillierter Report im UserComment
+    // Wir bauen einen gut lesbaren Textblock
+    const report = [
+      "--- LUMINA AI VISION REPORT ---",
+      `Subject: ${data.analysis.subject || '-'}`,
+      `Lighting: ${data.analysis.lighting || '-'}`,
+      `Composition: ${data.analysis.composition || '-'}`,
+      `Tech Check: ${data.analysis.technical || '-'}`
+    ].join('\n');
+    
+    userComment = report;
+  }
+
+  // 3. Datum Formatierung
   let xmpDate = "";
   if (data.exif.dateTime && typeof data.exif.dateTime === 'string') {
     try {
@@ -29,7 +56,7 @@ const createXmpContent = (data) => {
     } catch (e) { console.warn("Date error", e); }
   }
 
-  // 3. Fokus-Distanz
+  // 4. Fokus & Blende
   let focusDistanceLine = "";
   if (data.exif.focusDistance && typeof data.exif.focusDistance === 'string') {
     const distVal = data.exif.focusDistance.replace(/[^\d.]/g, ''); 
@@ -38,6 +65,7 @@ const createXmpContent = (data) => {
 
   const cleanAperture = (val) => (!val || typeof val !== 'string') ? "" : val.replace('f/', '');
 
+  // XML Zusammenbau
   return `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -49,12 +77,12 @@ const createXmpContent = (data) => {
     xmlns:aux="http://ns.adobe.com/exif/1.0/aux/"
     xmlns:dc="http://purl.org/dc/elements/1.1/"
     xmp:Rating="${rating}"
-    xmp:Label="${label}"
     xmp:CreateDate="${xmpDate}"
     xmp:ModifyDate="${xmpDate}">
    
-   <xmp:UserComment>Imported by Lumina Pipeline</xmp:UserComment>
+   <xmp:UserComment>${userComment}</xmp:UserComment>
    ${subjectBlock}
+   ${descriptionBlock}
    
    <tiff:Make>NIKON CORPORATION</tiff:Make>
    <tiff:Model>${data.exif.model}</tiff:Model>
@@ -120,24 +148,36 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
 
     // 2. AI Analyse
     onStatus("Sende Bild an Gemini (Analyse)...");
-    let aiResult = { keywords: [], score: 0, rating: 0 };
+    let aiResult = { keywords: [], analysis: null, rating: 0 };
     
     try {
-        const analysis = await analyzeImageWithPro(previewFile);
-        if (analysis && analysis.keywords) {
-            aiResult.keywords = analysis.keywords;
-            onStatus(`🤖 AI Schlagworte: ${analysis.keywords.slice(0, 3).join(", ")}...`);
+        const result = await analyzeImageWithPro(previewFile);
+        
+        // Keywords übernehmen
+        if (result.keywords) {
+            aiResult.keywords = result.keywords;
         }
+        
+        // NEU: Analyse-Daten übernehmen
+        if (result.analysis) {
+            aiResult.analysis = result.analysis;
+        }
+
+        if (aiResult.keywords.length > 0) {
+            onStatus(`🤖 AI Vision: ${aiResult.keywords.length} Tags + Analyse erstellt.`);
+        }
+
     } catch (aiError) {
         console.warn("AI Fehler (ignoriert):", aiError);
         onStatus("⚠️ AI Analyse fehlgeschlagen (nutze nur EXIF).");
     }
 
-    // 3. XMP Generieren
+    // 3. XMP Generieren (Mit allen Daten)
     onStatus("Generiere Smart XMP...");
     const xmpString = createXmpContent({ 
         rating: aiResult.rating, 
         keywords: aiResult.keywords, 
+        analysis: aiResult.analysis, // WICHTIG: Das fehlte vorher!
         exif: exifData 
     });
     
@@ -173,15 +213,7 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
     });
 
     onStatus("✅ Fertig.");
-    
-    // WICHTIG: Hier geben wir AI + EXIF zurück an die App!
-    return { 
-        success: true, 
-        data: { 
-            ...exifData, 
-            ai: aiResult 
-        } 
-    };
+    return { success: true, data: { ...exifData, ai: aiResult } };
 
   } catch (error) {
     console.error("PIPELINE ERROR:", error);
