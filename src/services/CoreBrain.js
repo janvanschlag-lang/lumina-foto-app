@@ -3,11 +3,12 @@ import { collection, addDoc } from "firebase/firestore";
 import { storage, db } from '../firebase';
 import ExifReader from 'exifreader';
 
-// --- XMP GENERATOR (Bleibt gleich, funktioniert ja super) ---
+// --- XMP GENERATOR ---
 const createXmpContent = (data) => {
   const rating = 0;
   const label = "";
   
+  // 1. Datum formatieren (Sicherer Check)
   let xmpDate = "";
   if (data.exif.dateTime && typeof data.exif.dateTime === 'string') {
     try {
@@ -17,6 +18,7 @@ const createXmpContent = (data) => {
     }
   }
 
+  // 2. Fokus-Distanz (Sicherer Check)
   let focusDistanceLine = "";
   if (data.exif.focusDistance && typeof data.exif.focusDistance === 'string') {
     const distVal = data.exif.focusDistance.replace(/[^\d.]/g, ''); 
@@ -25,6 +27,7 @@ const createXmpContent = (data) => {
     }
   }
 
+  // 3. Blende bereinigen
   const cleanAperture = (val) => {
       if (!val || typeof val !== 'string') return "";
       return val.replace('f/', '');
@@ -43,25 +46,37 @@ const createXmpContent = (data) => {
     xmp:Label="${label}"
     xmp:CreateDate="${xmpDate}"
     xmp:ModifyDate="${xmpDate}">
+   
    <xmp:UserComment>Imported by Lumina Pipeline</xmp:UserComment>
+   
    <tiff:Make>NIKON CORPORATION</tiff:Make>
    <tiff:Model>${data.exif.model}</tiff:Model>
    <aux:Lens>${data.exif.lens}</aux:Lens>
    ${focusDistanceLine}
+   
+   <tiff:Orientation>${data.exif.orientation}</tiff:Orientation>
+   <exif:ColorSpace>${data.exif.colorSpace}</exif:ColorSpace>
+   
    <exif:ExposureTime>${data.exif.shutter}</exif:ExposureTime>
    <exif:FNumber>${cleanAperture(data.exif.aperture)}</exif:FNumber>
-   <exif:ISOSpeedRatings><rdf:Seq><rdf:li>${data.exif.iso}</rdf:li></rdf:Seq></exif:ISOSpeedRatings>
+   <exif:ISOSpeedRatings>
+    <rdf:Seq>
+     <rdf:li>${data.exif.iso}</rdf:li>
+    </rdf:Seq>
+   </exif:ISOSpeedRatings>
+   
    <exif:ExposureProgram>${data.exif.program}</exif:ExposureProgram>
    <exif:MeteringMode>${data.exif.metering}</exif:MeteringMode>
    <exif:WhiteBalance>${data.exif.whiteBalance}</exif:WhiteBalance>
    <exif:DateTimeOriginal>${xmpDate}</exif:DateTimeOriginal>
+
   </rdf:Description>
  </rdf:RDF>
 </x:xmpmeta>
 <?xpacket end="w"?>`;
 };
 
-// --- HELPER: Objektiv-Namen ---
+// --- HELPER: Objektiv-Namen erraten ---
 const formatLensName = (tags) => {
   const explicitName = tags['Lens']?.description || tags['LensModel']?.description || tags['LensID']?.description;
   if (explicitName) return explicitName;
@@ -88,7 +103,7 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
     onStatus(`Lese EXIF aus ${rawFile.name}...`);
     const tags = await ExifReader.load(rawFile);
     
-    // WICHTIG: Hier ist der Fix (|| null)
+    // Daten extrahieren (Mit Fallbacks für alles)
     const exifData = {
       model: tags['Model']?.description || "Unbekannt",
       lens: formatLensName(tags),
@@ -96,24 +111,32 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
       aperture: tags['FNumber']?.description || "--",
       shutter: tags['ExposureTime']?.description || "--",
       
-      // Deep Metadata Safe Checks
+      // Deep Metadata
       dateTime: tags['DateTimeOriginal']?.description || tags['DateTime']?.description || null,
       program: tags['ExposureProgram']?.description || "Normal", 
       metering: tags['MeteringMode']?.description || "Pattern",
       whiteBalance: tags['WhiteBalance']?.description || "Auto",
       
-      // FIX: Wenn undefined, nimm null (Firestore mag kein undefined)
-      focusDistance: tags['FocusDistance']?.description || tags['SubjectDistance']?.description || null
+      // Safety Check für Firestore (kein undefined)
+      focusDistance: tags['FocusDistance']?.description || tags['SubjectDistance']?.description || null,
+      
+      // NEU: Orientierung & Farbraum (mit Defaults)
+      // 1 = Horizontal (Normal), 65535 = Uncalibrated (oft AdobeRGB)
+      orientation: tags['Orientation']?.value || 1,
+      colorSpace: tags['ColorSpace']?.value || 65535 
     };
 
+    // 2. AI Analyse (Mock)
     const aiResult = { score: 0 }; 
 
+    // 3. XMP Generieren
     onStatus("Generiere XMP...");
     const xmpString = createXmpContent({ score: aiResult.score, exif: exifData });
     const xmpBlob = new Blob([xmpString], { type: "application/xml" });
     const xmpName = rawFile.name.substring(0, rawFile.name.lastIndexOf('.')) + ".xmp";
     const xmpFile = new File([xmpBlob], xmpName);
 
+    // 4. Upload
     const assetBaseName = rawFile.name.substring(0, rawFile.name.lastIndexOf('.'));
     const assetPath = `assets/${assetBaseName}`; 
     
@@ -131,8 +154,8 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
       upload(xmpFile, xmpFile.name)
     ]);
 
+    // 5. DB Eintrag
     onStatus("Registriere Asset in Datenbank...");
-    // Jetzt ist exifData sicher (kein undefined mehr)
     await addDoc(collection(db, "assets"), {
       filename: rawFile.name,
       exif: exifData,
