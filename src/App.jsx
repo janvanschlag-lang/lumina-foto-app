@@ -8,10 +8,10 @@ import './App.css';
 import { ThemeProvider, CssBaseline, Box, Typography, Chip, Stack, Button, Paper, Grid } from "@suid/material";
 
 // Icons
-import UploadFileIcon from "@suid/icons-material/UploadFile";
 import ArrowBackIcon from "@suid/icons-material/ArrowBack";
 import AutoAwesomeIcon from "@suid/icons-material/AutoAwesome";
 import StarIcon from "@suid/icons-material/Star";
+import CloudUploadIcon from "@suid/icons-material/CloudUpload";
 
 // Helper: Custom Log Console
 const LogConsole = (props) => (
@@ -35,13 +35,14 @@ function App() {
   const [logs, setLogs] = createSignal([]);
   const [isProcessing, setIsProcessing] = createSignal(false);
   const [activeAsset, setActiveAsset] = createSignal(null); 
+  const [isDragging, setIsDragging] = createSignal(false); // State für Drag & Drop
 
   const addLog = (text, type = 'info') => {
     setLogs(prev => [{ text, type, time: new Date().toLocaleTimeString() }, ...prev]);
   };
 
-  const handleBundleIngest = async (e) => {
-    const files = Array.from(e.target.files);
+  // Logic Wrapper für Files
+  const processFiles = async (files) => {
     if (files.length === 0) return;
     setIsProcessing(true); setLogs([]); setActiveAsset(null);
     
@@ -69,6 +70,30 @@ function App() {
     setIsProcessing(false); addLog("--- Fertig ---", 'info');
   };
 
+  // Handler für Input Feld (Sidebar)
+  const handleFileInput = (e) => {
+    processFiles(Array.from(e.target.files));
+  };
+
+  // --- DRAG & DROP HANDLERS ---
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFiles(Array.from(e.dataTransfer.files));
+    }
+  };
+
   const handleGallerySelect = (asset) => {
     setActiveAsset({
       filename: asset.filename, urls: asset.urls, ai: asset.aiAnalysis,
@@ -85,30 +110,51 @@ function App() {
         <div class="left-sidebar">
           <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
             <Typography variant="subtitle2" fontWeight="bold">Lumina Ingest</Typography>
-            <Typography variant="caption" color="text.secondary">CoreBrain v0.8 Material</Typography>
+            <Typography variant="caption" color="text.secondary">CoreBrain v0.9 Drop</Typography>
           </Box>
-
+          {/* Legacy Input Button (Kann man lassen oder entfernen) */}
           <Box sx={{ p: 2 }}>
-            <input type="file" id="fileInput" multiple onChange={handleBundleIngest} style={{ display: 'none' }} accept=".nef,.dng,.jpg,.jpeg" disabled={isProcessing()}/>
-            <label htmlFor="fileInput">
-              <Paper variant="outlined" sx={{ 
-                height: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-                cursor: isProcessing() ? 'wait' : 'pointer', borderStyle: 'dashed', borderColor: 'text.secondary',
-                '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' }
-              }}>
-                <UploadFileIcon sx={{ fontSize: 30, color: 'text.secondary', mb: 1 }} />
-                <Typography variant="caption" color="text.secondary">Import Bundle</Typography>
-              </Paper>
-            </label>
+             <input type="file" id="fileInput" multiple onChange={handleFileInput} style={{ display: 'none' }} accept=".nef,.dng,.jpg,.jpeg" disabled={isProcessing()}/>
+             <label htmlFor="fileInput">
+               <Button variant="outlined" fullWidth size="small" component="span" sx={{ color: 'text.secondary', borderColor: 'divider' }}>
+                 Select Files manually
+               </Button>
+             </label>
           </Box>
           <LogConsole logs={logs} />
         </div>
 
-        {/* 2. CENTER STAGE */}
-        <div class="center-stage" style={{ background: theme.palette.background.default, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        {/* 2. CENTER STAGE (DROP ZONE) */}
+        <div 
+          class="center-stage" 
+          style={{ 
+            background: theme.palette.background.paper, // Dunkelgrau wie Sidebar
+            display: 'flex', 
+            flexDirection: 'column', 
+            height: '100%', 
+            overflow: 'hidden',
+            position: 'relative' // Wichtig für Overlay
+          }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           
+          {/* DRAG OVERLAY */}
+          <Show when={isDragging()}>
+            <Box sx={{ 
+              position: 'absolute', inset: 0, zIndex: 999, 
+              bgcolor: 'rgba(9, 9, 11, 0.85)', 
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              border: '2px dashed #555', margin: 2, borderRadius: 4, backdropFilter: 'blur(4px)'
+            }}>
+              <CloudUploadIcon sx={{ fontSize: 60, color: 'text.primary', mb: 2 }} />
+              <Typography variant="h5" color="text.primary">Drop to Import</Typography>
+              <Typography variant="body2" color="text.secondary">RAW + JPG bundles supported</Typography>
+            </Box>
+          </Show>
+
           <Show when={!activeAsset()}>
-             {/* Wrapper für Gallery: flex:1 und minHeight:0 sind entscheidend */}
              <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <Gallery onSelect={handleGallerySelect} selectedId={null} />
              </Box>
@@ -129,7 +175,7 @@ function App() {
               </Box>
 
               {/* Bild */}
-              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, overflow: 'hidden', minHeight: 0 }}>
+              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, overflow: 'hidden', minHeight: 0, bgcolor: 'background.default' }}>
                 <img src={activeAsset().urls.preview} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} />
               </Box>
 
@@ -139,15 +185,14 @@ function App() {
                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
                       <Stack direction="row" spacing={1} alignItems="center">
                          <Chip label={activeAsset().ai.flag?.toUpperCase() || 'NONE'} 
-                               color={activeAsset().ai.flag === 'pick' ? 'success' : activeAsset().ai.flag === 'reject' ? 'error' : 'default'} 
-                               size="small" sx={{ fontWeight: 'bold' }} />
+                               size="small" variant="outlined" sx={{ fontWeight: 'bold', borderRadius: 1 }} />
                          <Typography variant="caption" sx={{ borderLeft: 1, pl: 1, borderColor: 'divider' }}>
                            Score: {activeAsset().ai.score}/10
                          </Typography>
                       </Stack>
                       <Stack direction="row" spacing={0.5} alignItems="center">
-                         <StarIcon fontSize="small" sx={{ color: 'warning.main' }} />
-                         <Typography variant="body2" fontWeight="bold" color="warning.main">{activeAsset().ai.rating}/5</Typography>
+                         <StarIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                         <Typography variant="body2" fontWeight="bold" color="text.secondary">{activeAsset().ai.rating}/5</Typography>
                       </Stack>
                    </Stack>
 
@@ -195,8 +240,8 @@ function App() {
                <Show when={activeAsset().ai?.keywords}>
                   <Box>
                      <Stack direction="row" alignItems="center" spacing={1} mb={1}>
-                       <AutoAwesomeIcon fontSize="small" color="secondary" />
-                       <Typography variant="caption" color="secondary.main">GEMINI TAGS</Typography>
+                       <AutoAwesomeIcon fontSize="small" color="text.secondary" />
+                       <Typography variant="caption" color="text.secondary">GEMINI TAGS</Typography>
                      </Stack>
                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         <For each={activeAsset().ai.keywords.slice(0, 8)}>{kw => (

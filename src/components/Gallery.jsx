@@ -9,10 +9,8 @@ import {
 } from "@suid/material";
 
 // Icons
-import CheckCircleIcon from "@suid/icons-material/CheckCircle";
-import CancelIcon from "@suid/icons-material/Cancel";
-import HelpIcon from "@suid/icons-material/Help";
 import StarIcon from "@suid/icons-material/Star";
+import LensBlurIcon from "@suid/icons-material/LensBlur"; // Für Review/Neutral
 
 const Gallery = (props) => {
   const [assets, setAssets] = createSignal([]);
@@ -20,55 +18,77 @@ const Gallery = (props) => {
 
   // --- LIVE DATA LISTENER ---
   createEffect(() => {
-    const q = query(collection(db, "assets"), orderBy("captureDate", "desc"), limit(50));
+    const q = query(
+      collection(db, "assets"),
+      orderBy("captureDate", "desc"),
+      limit(50)
+    );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedAssets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const loadedAssets = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
       setAssets(loadedAssets);
       setLoading(false);
-    }, (error) => { console.error(error); setLoading(false); });
+    }, (error) => {
+      console.error("Gallery Error:", error);
+      setLoading(false);
+    });
+
     onCleanup(() => unsubscribe());
   });
 
   return (
     <Box sx={{ 
-      padding: 2, 
+      padding: 3, // Etwas mehr Luft
       height: '100%', 
       overflowY: 'auto',
       display: 'flex', 
-      flexDirection: 'column' 
+      flexDirection: 'column'
     }}>
       
       {/* HEADER */}
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1, fontWeight: 'bold' }}>
-          Library Stream ({assets().length})
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 2, fontWeight: 'bold' }}>
+          Library ({assets().length})
         </Typography>
       </Stack>
 
       {/* CONTENT */}
       <Show when={!loading()} fallback={
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-          <CircularProgress color="inherit" size={24} />
+          <CircularProgress color="inherit" size={20} />
         </Box>
       }>
         
-        {/* GRID */}
-        <Grid container spacing={2}>
+        {/* GRID (4 Spalten auf Desktop) */}
+        <Grid container spacing={3}>
           <For each={assets()}>{(asset) => (
-            <Grid item xs={6} sm={4} md={3} lg={2} xl={2}> 
+            <Grid item xs={12} sm={6} md={4} lg={3}> {/* lg={3} bedeutet 12/3 = 4 Spalten */}
               <Card 
                 onClick={() => props.onSelect(asset)}
+                elevation={0} // Kein Schatten
                 sx={{ 
                   cursor: 'pointer', 
+                  bgcolor: 'transparent', // Transparent, damit es mit dem Hintergrund verschmilzt
+                  border: 'none',         // Kein Rahmen
+                  borderRadius: 0,        // Eckig oder minimal rund
                   position: 'relative',
-                  border: 1,
-                  borderColor: props.selectedId === asset.id ? 'primary.main' : 'divider',
-                  transition: 'all 0.2s',
-                  '&:hover': { transform: 'translateY(-2px)', borderColor: 'text.primary', boxShadow: 4 }
+                  opacity: props.selectedId === asset.id ? 1 : 0.8,
+                  transition: 'opacity 0.2s',
+                  '&:hover': { opacity: 1 }
                 }}
               >
-                {/* IMAGE AREA */}
-                <Box sx={{ position: 'relative', aspectRatio: '3/2', bgcolor: 'background.paper' }}>
+                {/* IMAGE AREA (Clean) */}
+                <Box sx={{ 
+                  position: 'relative', 
+                  aspectRatio: '3/2', 
+                  bgcolor: '#222', 
+                  borderRadius: 2, 
+                  overflow: 'hidden',
+                  mb: 1
+                }}>
                   <Show when={asset.urls && asset.urls.preview} fallback={<Box sx={{width:'100%', height:'100%', bgcolor:'#222'}} />}>
                     <CardMedia
                       component="img"
@@ -78,42 +98,61 @@ const Gallery = (props) => {
                     />
                   </Show>
                   
-                  {/* FLAG OVERLAY */}
-                  <Box sx={{ position: 'absolute', top: 6, left: 6, display: 'flex', gap: 0.5 }}>
-                    <Show when={asset.verdict?.flag === 'pick'}>
-                      <Chip icon={<CheckCircleIcon sx={{ fontSize: '1rem !important' }} />} label="PICK" color="success" size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} />
-                    </Show>
-                    <Show when={asset.verdict?.flag === 'reject'}>
-                      <Chip icon={<CancelIcon sx={{ fontSize: '1rem !important' }} />} label="REJECT" color="error" size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} />
-                    </Show>
-                    <Show when={asset.verdict?.flag === 'review'}>
-                      <Chip icon={<HelpIcon sx={{ fontSize: '1rem !important' }} />} label="REVIEW" color="warning" size="small" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }} />
-                    </Show>
-                  </Box>
-
-                  {/* SCORE BADGE */}
-                  <Show when={asset.verdict?.score}>
-                    <Box sx={{ position: 'absolute', bottom: 4, right: 4, bgcolor: 'rgba(0,0,0,0.85)', color: 'white', borderRadius: 1, px: 0.6, py: 0.1, fontSize: '0.7rem', fontFamily: 'monospace', fontWeight: 'bold', border: '1px solid rgba(255,255,255,0.1)' }}>
-                      {asset.verdict.score}
-                    </Box>
+                  {/* Selection Border (Optional Active State) */}
+                  <Show when={props.selectedId === asset.id}>
+                    <Box sx={{ position: 'absolute', inset: 0, border: '2px solid white', borderRadius: 2, pointerEvents: 'none' }} />
                   </Show>
                 </Box>
 
-                {/* CARD FOOTER */}
-                <CardContent sx={{ padding: '8px 10px !important', bgcolor: 'background.paper' }}>
-                  <Typography variant="body2" noWrap color="text.secondary" sx={{ fontSize: '0.7rem', mb: 0.5 }}>
-                    {asset.filename}
-                  </Typography>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                {/* CARD FOOTER (Monochrome Data) */}
+                <Box sx={{ px: 0.5 }}>
+                  
+                  {/* Row 1: Filename & Stars */}
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+                    <Typography variant="body2" noWrap color="text.primary" sx={{ fontSize: '0.8rem', fontWeight: 500, maxWidth: '60%' }}>
+                      {asset.filename}
+                    </Typography>
+                    
+                    {/* Monochrome Stars */}
                     <Stack direction="row" alignItems="center" spacing={0.2}>
-                      <StarIcon sx={{ fontSize: 12, color: 'warning.main' }} />
-                      <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold', fontSize: '0.75rem' }}>{asset.verdict?.rating || 0}</Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'bold', mr: 0.5 }}>
+                        {asset.verdict?.rating}
+                      </Typography>
+                      <For each={Array(asset.verdict?.rating || 0)}>{() => 
+                        <StarIcon sx={{ fontSize: 10, color: 'text.secondary' }} />
+                      }</For>
                     </Stack>
-                    <Show when={asset.aiAnalysis?.color_analysis?.cast_detected}>
-                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'warning.main', boxShadow: '0 0 4px rgba(251, 191, 36, 0.5)' }} title="Color Cast detected" />
-                    </Show>
                   </Stack>
-                </CardContent>
+
+                  {/* Row 2: Chip & Score (Bottom) */}
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    
+                    {/* Monochrome Chip */}
+                    <Show when={asset.verdict?.flag} fallback={<Box />}>
+                       <Chip 
+                         label={asset.verdict.flag.toUpperCase()} 
+                         size="small" 
+                         variant="outlined"
+                         sx={{ 
+                           height: 18, 
+                           fontSize: '0.6rem', 
+                           fontWeight: 'bold',
+                           color: 'text.secondary',
+                           borderColor: 'divider',
+                           borderRadius: 1
+                         }} 
+                       />
+                    </Show>
+
+                    {/* Score Text */}
+                    <Show when={asset.verdict?.score}>
+                      <Typography variant="caption" color="text.secondary" fontFamily="monospace">
+                        {asset.verdict.score} / 10
+                      </Typography>
+                    </Show>
+
+                  </Stack>
+                </Box>
 
               </Card>
             </Grid>
