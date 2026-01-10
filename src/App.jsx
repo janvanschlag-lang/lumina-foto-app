@@ -3,7 +3,6 @@ import { db, storage } from './firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { collection, addDoc } from "firebase/firestore";
 import ExifReader from 'exifreader';
-// import { analyzeImageWithPro } from './geminiService.js'; // ROLLBACK
 import './App.css';
 
 const LogConsole = (props) => {
@@ -22,15 +21,15 @@ const LogConsole = (props) => {
   );
 }
 
-// NEU: XMP Generator Funktion
 const createXmpString = (curatedExif) => {
-  // Flacht die verschachtelte Struktur für eine einfachere XMP-Darstellung ab
   const flatExif = Object.values(curatedExif).reduce((acc, val) => ({ ...acc, ...val }), {});
 
   let exifItems = '';
   for (const [key, value] of Object.entries(flatExif)) {
-    if (value !== 'N/A') {
-      exifItems += `   <exif:${key}>${value}</exif:${key}>\n`;
+    // Ensure value is a string and handle potential floating point issues
+    const cleanValue = String(value).replace(',', '.');
+    if (cleanValue !== 'N/A') {
+      exifItems += `   <exif:${key}>${cleanValue}</exif:${key}>\n`;
     }
   }
 
@@ -51,11 +50,23 @@ function App() {
   const [uploadProgress, setUploadProgress] = createSignal(0);
   const [previewUrl, setPreviewUrl] = createSignal(null);
   const [exifData, setExifData] = createSignal(null);
-  // const [geminiAnalysis, setGeminiAnalysis] = createSignal(null); // ROLLBACK
   const [selectedFile, setSelectedFile] = createSignal(null);
 
   const addLog = (text, type = 'info') => {
     setLogs(prev => [...prev, { text, type, time: new Date().toLocaleTimeString() }]);
+  };
+
+  // NEU: Helper zur Formatierung der Anzeige
+  const formatExifForDisplay = (key, value) => {
+    if (value === 'N/A') return value;
+    switch (key) {
+      case 'FNumber':
+        return `f/${value}`;
+      case 'FocalLengthIn35mmFilm':
+        return `${value} mm`;
+      default:
+        return String(value);
+    }
   };
 
   const handleSingleIngest = (e) => {
@@ -64,14 +75,12 @@ function App() {
     if (!file) {
       setPreviewUrl(null);
       setExifData(null);
-      // setGeminiAnalysis(null); // ROLLBACK
       return;
     }
 
     const localPreviewUrl = URL.createObjectURL(file);
     setPreviewUrl(localPreviewUrl);
     setExifData(null);
-    // setGeminiAnalysis("Analyse wird durchgeführt..."); // ROLLBACK
     setIsUploading(true);
     setUploadProgress(0);
     addLog(`START: Verarbeite ${file.name}...`, 'info');
@@ -83,6 +92,7 @@ function App() {
         const getExifDesc = (tag) => (tag?.description || "N/A");
         const getValue = (tag) => (tag?.value ?? "N/A");
 
+        // KORRIGIERT: Daten werden jetzt "roh" gespeichert
         const curatedExif = {
           "Identifikation & Zeit": {
             Model: getExifDesc(tags['Model']),
@@ -91,8 +101,8 @@ function App() {
           "Belichtung & Optik (KI-Input)": {
             ISOSpeedRatings: getValue(tags['ISOSpeedRatings']),
             ExposureTime: getExifDesc(tags['ExposureTime']),
-            FNumber: `f/${getValue(tags['FNumber'])}`,
-            FocalLengthIn35mmFilm: `${getValue(tags['FocalLengthIn35mmFilm'])} mm`,
+            FNumber: getValue(tags['FNumber']), // Nur die Zahl, kein "f/"
+            FocalLengthIn35mmFilm: getValue(tags['FocalLengthIn35mmFilm']), // Nur die Zahl, kein "mm"
             ExposureBiasValue: getExifDesc(tags['ExposureBiasValue']),
           },
           "Bildcharakteristik & Modus": {
@@ -110,7 +120,6 @@ function App() {
         setExifData(curatedExif);
         addLog(`Kamera erkannt: ${curatedExif["Identifikation & Zeit"].Model}`, 'success');
 
-        // XMP WORKFLOW
         addLog("Generiere XMP Sidecar-Datei...", 'process');
         const xmpString = createXmpString(curatedExif);
         const xmpBlob = new Blob([xmpString], { type: 'application/rdf+xml' });
@@ -151,8 +160,8 @@ function App() {
 
                     await addDoc(collection(db, "assets"), {
                       filename: file.name,
-                      imageUrl: imageUrl, // URL zum Bild
-                      xmpUrl: xmpUrl,   // URL zur XMP-Datei
+                      imageUrl: imageUrl,
+                      xmpUrl: xmpUrl,
                       uploadedAt: new Date(),
                       curatedExif: curatedExif,
                       allExif: tags 
@@ -199,18 +208,17 @@ function App() {
             <h4 style={{ marginTop: 0, color: '#999' }}>Vorschau & Metadaten</h4>
             <img src={previewUrl()} alt="Vorschau" style={{ maxHeight: '150px', width: 'auto', borderRadius: '8px', display: 'block', margin: '0 auto' }} />
             
-            {/* ROLLBACK: Gemini UI entfernt */}
-
             <Show when={exifData()}>
               <div style={{ marginTop: '15px', maxHeight: '300px', overflowY: 'auto' }}>
                 <For each={Object.entries(exifData())}>{
                   ([category, data]) => (
                     <div style={{ marginBottom: '15px' }}>
                       <h5 style={{ marginBottom: '8px', color: '#aaa', borderBottom: '1px solid #444', paddingBottom: '4px' }}>{category}</h5>
+                      {/* KORRIGIERT: Formatierung zur Anzeigezeit */}
                       <For each={Object.entries(data)}>{([key, value]) => (
                         <p style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0', fontFamily: 'monospace', fontSize: '11px', color: '#ddd' }}>
                           <b style={{ color: '#888', paddingRight: '10px' }}>{key}:</b> 
-                          <span>{String(value)}</span>
+                          <span>{formatExifForDisplay(key, value)}</span>
                         </p>)}
                       </For>
                     </div>
