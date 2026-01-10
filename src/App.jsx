@@ -1,23 +1,35 @@
 import { createSignal, Show, For } from 'solid-js';
 import { processAssetBundle } from './services/CoreBrain';
-import './App.css';
+import './App.css'; // Stellt sicher, dass unsere neuen Klassen geladen werden
 
-// --- UI KOMPONENTEN (Unverändert gut) ---
+// --- UI COMPONENTS ---
 
 const LogConsole = (props) => {
   return (
-    <div style={{ marginTop: '30px', background: '#000', padding: '15px', borderRadius: '8px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid #333' }}>
-      <h4 style={{ margin: '0 0 10px 0', color: '#666' }}>SYSTEM PROTOKOLL:</h4>
-      <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-        <For each={props.logs()}>{(log) => (
-          <div style={{ 
-            marginBottom: '4px', 
-            color: log.type === 'error' ? '#ff5555' : log.type === 'success' ? '#55ff55' : log.type === 'process' ? '#ffff55' : '#ccc' 
-          }}>
-            <span style={{ color: '#555' }}>[{log.time}]</span> {log.text}
-          </div>
-        )}</For>
-      </div>
+    <div style={{ 
+      flex: 1, 
+      overflowY: 'auto', 
+      background: '#0a0a0a', 
+      padding: '10px', 
+      fontFamily: 'monospace', 
+      fontSize: '10px', 
+      borderTop: '1px solid #222'
+    }}>
+      <div style={{ color: '#555', marginBottom: '8px', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Protokoll</div>
+      <For each={props.logs()}>{(log) => (
+        <div style={{ 
+          marginBottom: '3px', 
+          borderLeft: `2px solid ${log.type === 'error' ? '#f44' : log.type === 'success' ? '#4f4' : '#ff4'}`,
+          paddingLeft: '6px',
+          color: '#ccc',
+          lineHeight: '1.4'
+        }}>
+          <span style={{ color: '#444', marginRight: '4px' }}>{log.time.split(' ')[0]}</span>
+          <span style={{ color: log.type === 'error' ? '#f88' : log.type === 'success' ? '#afa' : log.type === 'process' ? '#fe9' : '#bbb' }}>
+            {log.text}
+          </span>
+        </div>
+      )}</For>
     </div>
   );
 }
@@ -30,140 +42,181 @@ function App() {
   const [previewUrl, setPreviewUrl] = createSignal(null);
   const [currentBundleName, setCurrentBundleName] = createSignal("");
 
-  // Logging Helper
   const addLog = (text, type = 'info') => {
-    setLogs(prev => [...prev, { text, type, time: new Date().toLocaleTimeString() }]);
+    setLogs(prev => [{ text, type, time: new Date().toLocaleTimeString() }, ...prev]);
   };
 
-  // Der neue Handler für Paare (NEF + JPG)
   const handleBundleIngest = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
     setIsProcessing(true);
-    setLogs([]); // Reset Logs
+    setLogs([]); 
     setPreviewUrl(null);
+    setCurrentBundleName("");
     
-    // 1. Dateien sortieren
     const nefs = files.filter(f => f.name.toLowerCase().endsWith('.nef'));
     const jpgs = files.filter(f => f.name.toLowerCase().endsWith('.jpg') || f.name.toLowerCase().endsWith('.jpeg'));
 
     if (nefs.length === 0) {
-      addLog("⚠️ Keine NEF Datei ausgewählt. Bitte wähle RAW + JPG.", 'error');
+      addLog("⚠️ Keine NEF Datei ausgewählt.", 'error');
       setIsProcessing(false);
       return;
     }
 
-    addLog(`Batch Start: ${nefs.length} RAWs und ${jpgs.length} JPGs gefunden.`, 'info');
+    addLog(`Batch Start: ${nefs.length} RAWs + ${jpgs.length} JPGs.`, 'info');
 
-    // 2. Schleife durch alle RAWs
     for (const rawFile of nefs) {
-      const baseName = rawFile.name.substring(0, rawFile.name.lastIndexOf('.'));
       setCurrentBundleName(rawFile.name);
-      
-      // Suche passendes JPG (Simulierte Extraktion: Dateiname muss ähnlich sein)
-      // Wir suchen nach [Name].jpg oder [Name]_Test.jpg
+      const baseName = rawFile.name.substring(0, rawFile.name.lastIndexOf('.'));
       const previewFile = jpgs.find(j => j.name.includes(baseName));
 
       if (!previewFile) {
-        addLog(`❌ SKIP: Kein Vorschaubild für ${rawFile.name} gefunden.`, 'error');
+        addLog(`SKIP: ${rawFile.name} (Kein JPG Partner)`, 'error');
         continue;
       }
 
-      // Zeige das lokale JPG sofort an (User Feedback)
-      const localUrl = URL.createObjectURL(previewFile);
-      setPreviewUrl(localUrl);
+      setPreviewUrl(URL.createObjectURL(previewFile));
+      addLog(`⚡ Verarbeite: ${rawFile.name}`, 'process');
 
-      addLog(`⚡ Verarbeite Bundle: ${rawFile.name} + ${previewFile.name}`, 'process');
-
-      // 3. Aufruf der CoreBrain Engine
-      // Wir übergeben "addLog" als Callback, damit CoreBrain direkt hier reinschreiben kann
       const success = await processAssetBundle(rawFile, previewFile, (msg) => addLog(msg, 'process'));
 
       if (success) {
-        addLog(`✅ Bundle ${baseName} erfolgreich archiviert & analysiert.`, 'success');
+        addLog(`✅ Archiviert: ${baseName}`, 'success');
       } else {
-        addLog(`❌ Fehler bei ${baseName}.`, 'error');
+        addLog(`❌ Fehler: ${baseName}`, 'error');
       }
     }
-
     setIsProcessing(false);
-    addLog("--- Batch Vorgang beendet ---", 'info');
+    addLog("--- Fertig ---", 'info');
   };
 
   return (
-    <div className="container" style={{ padding: '20px', maxWidth: '800px', margin: '0 auto', fontFamily: 'Inter, sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-        <h2 style={{margin: 0}}>Lumina CoreBrain Ingest</h2>
-        <span style={{ fontSize: '12px', background: '#333', padding: '4px 8px', borderRadius: '4px', color: '#888' }}>v0.2 MVP</span>
-      </div>
-
-      <div style={{ display: 'flex', gap: '20px', alignItems: 'stretch' }}>
-        
-        {/* Linke Spalte: Upload Area */}
-        <div style={{ flex: 1 }}>
-          <div style={{ 
-            border: '2px dashed #444', 
-            padding: '40px', 
-            textAlign: 'center', 
-            borderRadius: '12px', 
-            background: '#1a1a1a',
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            boxSizing: 'border-box'
-          }}>
-            <input 
-              type="file" 
-              id="fileInput" 
-              multiple // WICHTIG für Bundle Upload
-              onChange={handleBundleIngest} 
-              style={{ display: 'none' }} 
-              accept=".nef,.dng,.jpg,.jpeg" 
-              disabled={isProcessing()}
-            />
-            
-            <label htmlFor="fileInput" style={{ 
-              cursor: isProcessing() ? 'default' : 'pointer', 
-              display: 'block' 
-            }}>
-              <div style={{ fontSize: '3rem', marginBottom: '10px' }}>📥</div>
-              <div style={{ fontSize: '1.2rem', color: '#fff', fontWeight: 'bold' }}>
-                {isProcessing() ? "Verarbeite..." : "Bundle Auswählen"}
-              </div>
-              <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#888' }}>
-                Bitte <b>.NEF</b> und <b>.JPG</b> gleichzeitig wählen.
-              </div>
-            </label>
-          </div>
+    <div class="app-grid-container">
+      
+      {/* 1. LEFT SIDEBAR */}
+      <div class="left-sidebar">
+        {/* Header */}
+        <div style={{ padding: '16px', borderBottom: '1px solid #222' }}>
+          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600', letterSpacing: '-0.02em' }}>Lumina Ingest</h3>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.2 MVP</div>
         </div>
 
-        {/* Rechte Spalte: Live Preview des aktuellen Bildes */}
-        <Show when={previewUrl()}>
-          <div style={{ flex: 1, background: '#1a1a1a', padding: '15px', borderRadius: '12px', border: '1px solid #333' }}>
-            <h4 style={{ marginTop: 0, marginBottom: '10px', color: '#999', fontSize: '12px', textTransform: 'uppercase' }}>
-              Aktuelle Verarbeitung
-            </h4>
-            <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden' }}>
-              <img src={previewUrl()} alt="Vorschau" style={{ width: '100%', display: 'block' }} />
-              <div style={{ 
-                position: 'absolute', bottom: 0, left: 0, right: 0, 
-                background: 'rgba(0,0,0,0.7)', color: 'white', 
-                padding: '8px', fontSize: '10px', fontFamily: 'monospace' 
-              }}>
-                {currentBundleName()}
-              </div>
+        {/* Upload Area */}
+        <div style={{ padding: '16px' }}>
+          <input 
+            type="file" 
+            id="fileInput" 
+            multiple 
+            onChange={handleBundleIngest} 
+            style={{ display: 'none' }} 
+            accept=".nef,.dng,.jpg,.jpeg" 
+            disabled={isProcessing()}
+          />
+          <label htmlFor="fileInput" style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            height: '120px',
+            border: '1px dashed #444', 
+            borderRadius: '6px', 
+            cursor: isProcessing() ? 'wait' : 'pointer',
+            background: isProcessing() ? '#1a1a1a' : '#161616',
+            transition: 'all 0.2s',
+            color: '#888'
+          }}>
+            <div style={{ fontSize: '20px', marginBottom: '8px', opacity: 0.7 }}>📥</div>
+            <div style={{ fontSize: '12px', fontWeight: '500', color: '#ccc' }}>
+              {isProcessing() ? "Pipeline läuft..." : "Bundle Importieren"}
             </div>
-            <div style={{ marginTop: '10px', fontSize: '11px', color: '#666' }}>
+            <div style={{ fontSize: '9px', marginTop: '4px', opacity: 0.5 }}>NEF + JPG wählen</div>
+          </label>
+        </div>
+
+        {/* Console */}
+        <LogConsole logs={logs} />
+      </div>
+
+      {/* 2. CENTER STAGE */}
+      <div class="center-stage">
+        {/* Top Bar Info */}
+        <div style={{ 
+          height: '40px', 
+          borderBottom: '1px solid #222', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          color: '#444', 
+          fontSize: '11px',
+          fontFamily: 'monospace',
+          flexShrink: 0 // Verhindert, dass die Top-Bar schrumpft
+        }}>
+          {currentBundleName() || "WARTE AUF EINGABE"}
+        </div>
+
+        {/* Image Stage */}
+        <div style={{ 
+          flex: 1, 
+          position: 'relative', 
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <Show when={previewUrl()} fallback={
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#222', fontSize: '12px' }}>
+              Keine Vorschau
+            </div>
+          }>
+            <img 
+              src={previewUrl()} 
+              alt="Preview" 
+              style={{ 
+                maxWidth: '100%', 
+                maxHeight: '100%', 
+                objectFit: 'contain',
+                display: 'block',
+                borderRadius: '4px',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+              }} 
+            />
+          </Show>
+        </div>
+      </div>
+
+      {/* 3. RIGHT SIDEBAR */}
+      <div class="right-sidebar">
+        <div style={{ color: '#555', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '15px', fontWeight: 'bold' }}>
+          Status Monitor
+        </div>
+        
+        <Show when={isProcessing() || previewUrl()}>
+          <div style={{ background: '#161616', borderRadius: '4px', padding: '12px', border: '1px solid #222' }}>
+            <div style={{ fontSize: '11px', color: '#fff', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4f4', boxShadow: '0 0 5px #4f4' }}></div>
+              Active Pipeline
+            </div>
+            <div style={{ fontSize: '10px', color: '#999', lineHeight: '1.4' }}>
               Simulierte Extraktion aus RAW aktiv.
             </div>
+            
+            <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #333', fontSize: '9px', color: '#666', fontFamily: 'monospace' }}>
+              <div style={{display:'flex', justifyContent:'space-between'}}><span>Input:</span> <span style={{color:'#888'}}>NEF (D610)</span></div>
+              <div style={{display:'flex', justifyContent:'space-between', marginTop:'2px'}}><span>Proxy:</span> <span style={{color:'#888'}}>JPG (Embed)</span></div>
+              <div style={{display:'flex', justifyContent:'space-between', marginTop:'2px'}}><span>Engine:</span> <span style={{color:'#888'}}>CoreBrain</span></div>
+            </div>
+          </div>
+        </Show>
+
+        <Show when={!isProcessing() && !previewUrl()}>
+          <div style={{ fontSize: '11px', color: '#444', fontStyle: 'italic', textAlign: 'center', marginTop: '20px' }}>
+            System bereit.
           </div>
         </Show>
       </div>
 
-      <LogConsole logs={logs} />
     </div>
   );
 }
