@@ -3,9 +3,8 @@ import { collection, addDoc } from "firebase/firestore";
 import { storage, db } from '../firebase';
 import ExifReader from 'exifreader';
 
-// --- XMP GENERATOR ---
+// --- XMP GENERATOR (Unverändert) ---
 const createXmpContent = (data) => {
-  // Mock-Werte für XMP (da AI noch inaktiv)
   const rating = 0;
   const label = "";
   
@@ -26,7 +25,7 @@ const createXmpContent = (data) => {
 <?xpacket end="w"?>`;
 };
 
-// --- CORE LOGIC ---
+// --- CORE LOGIC (Mit Debugging) ---
 
 export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
   const bundleId = rawFile.name;
@@ -36,16 +35,29 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
     onStatus(`Lese EXIF aus ${rawFile.name}...`);
     const tags = await ExifReader.load(rawFile);
     
-    // Die 5 wichtigsten Werte extrahieren (Robust mit Fallbacks)
+    // --- 🕵️ DEBUG ZONE START ---
+    console.group("📸 EXIF ANALYSE FÜR " + rawFile.name);
+    console.log("Rohe Tags (Alle):", tags);
+    console.log("Objektiv-Kandidaten:", {
+        "Lens": tags['Lens'],           // Nikon Standard?
+        "LensID": tags['LensID'],       // Oft die ID
+        "LensModel": tags['LensModel'], // EXIF Standard
+        "LensType": tags['LensType']    // Manchmal hier
+    });
+    console.groupEnd();
+    // --- 🕵️ DEBUG ZONE END ---
+
+    // Die Werte extrahieren (Hier erweitern wir später um das gefundene Lens-Feld)
     const exifData = {
       model: tags['Model']?.description || "Unbekannt",
-      lens: tags['LensModel']?.description || tags['FocalLength']?.description || "-- mm",
+      // Aktueller Fallback (wird bald ersetzt):
+      lens: tags['Lens']?.description || tags['LensModel']?.description || tags['FocalLength']?.description || "-- mm",
       iso: tags['ISOSpeedRatings']?.description || tags['ISOSpeedRatings']?.value || "--",
       aperture: tags['FNumber']?.description || "--",
       shutter: tags['ExposureTime']?.description || "--"
     };
 
-    // 2. AI (Übersprungen)
+    // 2. AI (Mock-Modus)
     const aiResult = { score: 0 }; 
 
     // 3. XMP Generieren
@@ -75,14 +87,12 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
     // 5. DB
     await addDoc(collection(db, "assets"), {
       filename: rawFile.name,
-      exif: exifData, // Wir speichern jetzt das saubere Objekt
+      exif: exifData,
       urls: { raw: rawUrl, preview: previewCloudUrl, xmp: xmpUrl },
       uploadedAt: new Date()
     });
 
     onStatus("✅ Fertig.");
-    
-    // WICHTIG: Wir geben jetzt die Daten zurück an die App!
     return { success: true, data: exifData };
 
   } catch (error) {
