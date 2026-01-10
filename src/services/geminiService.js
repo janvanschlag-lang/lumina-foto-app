@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Standard: Gemini 2.5 Flash (Schnell & Multimodal)
+// Standard: Gemini 2.5 Flash
 const MODEL_NAME = "gemini-2.5-flash";
 
 const getApiKey = () => {
@@ -24,7 +24,7 @@ const fileToGenerativePart = async (file) => {
 };
 
 /**
- * Hauptfunktion: Analysiert das Bild mit Gemini Vision (Curator Mode)
+ * Hauptfunktion: Analysiert das Bild mit Gemini Vision (Profi Curator Mode)
  */
 export const analyzeImageWithPro = async (imageFile) => {
   try {
@@ -32,40 +32,51 @@ export const analyzeImageWithPro = async (imageFile) => {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    // DER CURATOR PROMPT
-    // Wir fordern: Keywords + Analyse + SCORING (Harte Zahlen)
+    // DER PROFI PROMPT
     const prompt = `
-      You are a strict AI Photo Editor & Curator (TÜV-Prüfer style).
-      Analyze the input image based on strictly visible visual data.
+      You are a professional Photo Editor & Curator.
+      Analyze the image for a stock photography database. Be strict but fair.
       
-      Task:
-      1. KEYWORDS: Generate 10-15 English keywords (Stock photography standard).
-      2. VISUAL ANALYSIS: Brief structured assessment (Subject, Light, Composition).
-      3. SCORING: Rate the image strictly (0-10 integers) on technical standards.
-         - focus: Sharpness of the main subject (10=Perfect eye sharpness, 1=Blurry).
-         - exposure: Histogram balance (10=Perfect dynamic range, 1=Heavy clipping).
-         - composition: Framing & Aesthetics (10=Masterpiece, 1=Poor/Cropped).
+      Structure your response into 3 sections:
+      1. KEYWORDS: 10-15 English tags.
+      2. ANALYSIS: Descriptive text blocks.
+      3. RATING: Detailed scores (0-10) and flags.
+
+      CRITERIA FOR RATING:
+      - Technical: Sharpness is paramount. Noise is acceptable if fixable.
+      - Composition: Look for crops and distractions.
+      - Aesthetic: Mood, moment, and impact.
       
       Response Format (JSON ONLY):
       {
-        "keywords": ["Mallard", "Duck", ...],
+        "keywords": ["Duck", "Water", ...],
         "analysis": {
-          "subject": "...",
-          "lighting": "...",
-          "composition": "...",
-          "technical": "..."
+          "subject": "Detailed description of subject...",
+          "lighting": "Description of light...",
+          "composition": "Description of framing...",
+          "technical": "Notes on noise, sharpness, artifacts..."
         },
-        "scores": {
-          "focus": 8,
-          "exposure": 9,
-          "composition": 7
+        "technical": {
+          "focus_score": 8,       // 10=Perfect eye sharpness, 1=Blurry (CRITICAL)
+          "noise_score": 5,       // 10=Clean, 1=Heavy Noise (Fixable)
+          "exposure_score": 7,    // 10=Perfect Range, 1=Clipping
+          "is_intentional": false // true if blur/darkness seems artistic
+        },
+        "composition": {
+          "score": 7,             // General framing score
+          "crop_issue": false,    // true if heads/limbs cut off awkwardly
+          "distractions": false   // true if background is messy
+        },
+        "aesthetic": {
+          "score": 8,             // "Wow" factor
+          "commercial_appeal": 9  // Stock photo value
         }
       }
     `;
 
     const imagePart = await fileToGenerativePart(imageFile);
 
-    console.log(`🤖 Sende Bild an ${MODEL_NAME} (Curator Mode)...`);
+    console.log(`🤖 Sende Bild an ${MODEL_NAME} (Profi Mode)...`);
     
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
@@ -76,37 +87,36 @@ export const analyzeImageWithPro = async (imageFile) => {
     const jsonString = text.replace(/```json|```/g, "").trim();
     
     let parsedData = {};
-    let keywords = [];
-    let analysis = {};
-    let scores = null;
+    
+    // Initialisierung der Return-Struktur
+    let finalResult = {
+        keywords: [],
+        analysis: {},
+        technical: null,
+        composition: null,
+        aesthetic: null
+    };
 
     try {
         parsedData = JSON.parse(jsonString);
         
-        // Robustes Parsing
-        if (Array.isArray(parsedData)) {
-            keywords = parsedData; // Fallback
-        } else {
-            keywords = parsedData.keywords || [];
-            analysis = parsedData.analysis || {};
-            scores = parsedData.scores || null; // NEU: Die Scores abgreifen
-        }
+        // Mapping (Sicherstellen, dass wir Daten haben)
+        finalResult.keywords = parsedData.keywords || [];
+        finalResult.analysis = parsedData.analysis || {};
+        finalResult.technical = parsedData.technical || { focus_score: 5, noise_score: 5, exposure_score: 5 };
+        finalResult.composition = parsedData.composition || { score: 5 };
+        finalResult.aesthetic = parsedData.aesthetic || { score: 5 };
 
     } catch (e) {
         console.error("JSON Parse Fehler:", e);
-        keywords = []; 
-        analysis = { error: "Parsing Failed" };
+        finalResult.keywords = []; 
+        finalResult.analysis = { error: "Parsing Failed" };
     }
 
-    return { 
-      keywords,
-      analysis,
-      scores, // Das geben wir jetzt zurück!
-      raw: text 
-    };
+    return { ...finalResult, raw: text };
 
   } catch (error) {
     console.error("AI Analyse fehlgeschlagen:", error);
-    return { keywords: [], analysis: {}, scores: null, error: error.message };
+    return { keywords: [], error: error.message };
   }
 };
