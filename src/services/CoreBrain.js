@@ -3,7 +3,7 @@ import { collection, addDoc } from "firebase/firestore";
 import { storage, db } from '../firebase';
 import ExifReader from 'exifreader';
 
-// --- XMP GENERATOR (Unverändert) ---
+// --- XMP GENERATOR ---
 const createXmpContent = (data) => {
   const rating = 0;
   const label = "";
@@ -25,7 +25,27 @@ const createXmpContent = (data) => {
 <?xpacket end="w"?>`;
 };
 
-// --- CORE LOGIC (Mit Debugging) ---
+// --- HELPER: Objektiv-Namen erraten ---
+const formatLensName = (tags) => {
+  // 1. Versuch: Echter Name aus den Metadaten
+  const explicitName = tags['Lens']?.description || tags['LensModel']?.description || tags['LensID']?.description;
+  if (explicitName) return explicitName;
+
+  // 2. Versuch: Bauen aus Brennweite + Lichtstärke (z.B. "300 mm f/2.8")
+  const focal = tags['FocalLength']?.description;
+  const aperture = tags['MaxApertureValue']?.description; // z.B. 5.66
+
+  if (focal && aperture) {
+    // Wir runden die Blende auf 1 Nachkommastelle (5.66 -> 5.7)
+    const fVal = Math.round(parseFloat(aperture) * 10) / 10; 
+    return `${focal} f/${fVal}`;
+  }
+
+  // 3. Versuch: Nur Brennweite
+  return focal || "Unbekanntes Objektiv";
+};
+
+// --- CORE LOGIC ---
 
 export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
   const bundleId = rawFile.name;
@@ -35,29 +55,16 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
     onStatus(`Lese EXIF aus ${rawFile.name}...`);
     const tags = await ExifReader.load(rawFile);
     
-    // --- 🕵️ DEBUG ZONE START ---
-    console.group("📸 EXIF ANALYSE FÜR " + rawFile.name);
-    console.log("Rohe Tags (Alle):", tags);
-    console.log("Objektiv-Kandidaten:", {
-        "Lens": tags['Lens'],           // Nikon Standard?
-        "LensID": tags['LensID'],       // Oft die ID
-        "LensModel": tags['LensModel'], // EXIF Standard
-        "LensType": tags['LensType']    // Manchmal hier
-    });
-    console.groupEnd();
-    // --- 🕵️ DEBUG ZONE END ---
-
-    // Die Werte extrahieren (Hier erweitern wir später um das gefundene Lens-Feld)
+    // Intelligente Daten-Extraktion
     const exifData = {
       model: tags['Model']?.description || "Unbekannt",
-      // Aktueller Fallback (wird bald ersetzt):
-      lens: tags['Lens']?.description || tags['LensModel']?.description || tags['FocalLength']?.description || "-- mm",
+      lens: formatLensName(tags), // Nutzt die neue Helper-Funktion
       iso: tags['ISOSpeedRatings']?.description || tags['ISOSpeedRatings']?.value || "--",
       aperture: tags['FNumber']?.description || "--",
       shutter: tags['ExposureTime']?.description || "--"
     };
 
-    // 2. AI (Mock-Modus)
+    // 2. AI Analyse (Mock-Modus)
     const aiResult = { score: 0 }; 
 
     // 3. XMP Generieren
@@ -84,7 +91,7 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
       upload(xmpFile, xmpFile.name)
     ]);
 
-    // 5. DB
+    // 5. DB Eintrag
     await addDoc(collection(db, "assets"), {
       filename: rawFile.name,
       exif: exifData,
