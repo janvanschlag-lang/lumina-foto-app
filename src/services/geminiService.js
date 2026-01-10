@@ -24,7 +24,7 @@ const fileToGenerativePart = async (file) => {
 };
 
 /**
- * Hauptfunktion: Analysiert das Bild mit Gemini Vision (Profi Curator Mode)
+ * Hauptfunktion: Analysiert das Bild mit Gemini Vision (Profi Curator + Colorist Mode)
  */
 export const analyzeImageWithPro = async (imageFile) => {
   try {
@@ -32,51 +32,57 @@ export const analyzeImageWithPro = async (imageFile) => {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    // DER PROFI PROMPT
+    // DER PROFI PROMPT (JETZT MIT COLOR ANALYSIS)
     const prompt = `
       You are a professional Photo Editor & Curator.
       Analyze the image for a stock photography database. Be strict but fair.
       
-      Structure your response into 3 sections:
+      Structure your response into 4 sections:
       1. KEYWORDS: 10-15 English tags.
       2. ANALYSIS: Descriptive text blocks.
       3. RATING: Detailed scores (0-10) and flags.
+      4. COLOR: White Balance check.
 
-      CRITERIA FOR RATING:
+      CRITERIA:
       - Technical: Sharpness is paramount. Noise is acceptable if fixable.
-      - Composition: Look for crops and distractions.
-      - Aesthetic: Mood, moment, and impact.
+      - Color: Detect unnatural color casts (e.g. green tint on skin/feathers).
       
       Response Format (JSON ONLY):
       {
         "keywords": ["Duck", "Water", ...],
         "analysis": {
-          "subject": "Detailed description of subject...",
+          "subject": "Detailed description...",
           "lighting": "Description of light...",
           "composition": "Description of framing...",
-          "technical": "Notes on noise, sharpness, artifacts..."
+          "technical": "Notes on noise, sharpness..."
         },
         "technical": {
-          "focus_score": 8,       // 10=Perfect eye sharpness, 1=Blurry (CRITICAL)
-          "noise_score": 5,       // 10=Clean, 1=Heavy Noise (Fixable)
-          "exposure_score": 7,    // 10=Perfect Range, 1=Clipping
-          "is_intentional": false // true if blur/darkness seems artistic
+          "focus_score": 8,       // 10=Perfect, 1=Blurry
+          "noise_score": 5,       // 10=Clean, 1=Heavy Noise
+          "exposure_score": 7,    // 10=Perfect, 1=Clipping
+          "is_intentional": false 
+        },
+        "color_analysis": {
+          "cast_detected": true,          // true if unnatural tint found
+          "cast_color": "Green",          // e.g. Green, Blue, Magenta, Warm
+          "confidence": 8,                // 0-10 how sure are you?
+          "correction_hint": "Tint +15"   // What would a retoucher do?
         },
         "composition": {
-          "score": 7,             // General framing score
-          "crop_issue": false,    // true if heads/limbs cut off awkwardly
-          "distractions": false   // true if background is messy
+          "score": 7,             
+          "crop_issue": false,    
+          "distractions": false   
         },
         "aesthetic": {
-          "score": 8,             // "Wow" factor
-          "commercial_appeal": 9  // Stock photo value
+          "score": 8,             
+          "commercial_appeal": 9  
         }
       }
     `;
 
     const imagePart = await fileToGenerativePart(imageFile);
 
-    console.log(`🤖 Sende Bild an ${MODEL_NAME} (Profi Mode)...`);
+    console.log(`🤖 Sende Bild an ${MODEL_NAME} (Colorist Mode)...`);
     
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
@@ -88,11 +94,12 @@ export const analyzeImageWithPro = async (imageFile) => {
     
     let parsedData = {};
     
-    // Initialisierung der Return-Struktur
+    // Initialisierung
     let finalResult = {
         keywords: [],
         analysis: {},
         technical: null,
+        color_analysis: null, // NEU
         composition: null,
         aesthetic: null
     };
@@ -100,10 +107,11 @@ export const analyzeImageWithPro = async (imageFile) => {
     try {
         parsedData = JSON.parse(jsonString);
         
-        // Mapping (Sicherstellen, dass wir Daten haben)
+        // Mapping
         finalResult.keywords = parsedData.keywords || [];
         finalResult.analysis = parsedData.analysis || {};
         finalResult.technical = parsedData.technical || { focus_score: 5, noise_score: 5, exposure_score: 5 };
+        finalResult.color_analysis = parsedData.color_analysis || { cast_detected: false };
         finalResult.composition = parsedData.composition || { score: 5 };
         finalResult.aesthetic = parsedData.aesthetic || { score: 5 };
 

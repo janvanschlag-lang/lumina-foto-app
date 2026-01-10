@@ -4,7 +4,7 @@ import { storage, db } from '../firebase';
 import ExifReader from 'exifreader';
 import { analyzeImageWithPro } from './geminiService';
 
-// --- LOGIC ENGINE: Das "Waterfall Culling" ---
+// --- LOGIC ENGINE ---
 const calculateSmartRating = (aiData) => {
   if (!aiData.technical) return 0;
 
@@ -12,14 +12,10 @@ const calculateSmartRating = (aiData) => {
   const comp = aiData.composition;
   const aest = aiData.aesthetic;
 
-  // 1. DER TÜRSTEHER (K.O. Kriterien)
-  // Unscharf und KEINE Absicht? -> Sofort 1 oder 2 Sterne.
-  if (tech.focus_score < 5 && !tech.is_intentional) {
-    return 1; // Ausschuss
-  }
+  // 1. TÜRSTEHER
+  if (tech.focus_score < 5 && !tech.is_intentional) return 1;
 
-  // 2. DIE BASIS-NOTE (Gewichteter Durchschnitt)
-  // Fokus zählt doppelt, Ästhetik zählt stark, Rauschen zählt wenig.
+  // 2. BASIS-NOTE
   let score = (
     (tech.focus_score * 2) + 
     (comp.score * 1.5) + 
@@ -27,26 +23,16 @@ const calculateSmartRating = (aiData) => {
     (tech.exposure_score * 1) 
   ) / 6.0;
 
-  // 3. ABZÜGE IN DER B-NOTE (Penalties)
-  
-  // Anschnitt-Fehler (Ente ohne Kopf) -> Deckelung auf max 3 Sterne
-  if (comp.crop_issue) {
-    score = Math.min(score, 6.0); // Entspricht ca. 3 Sternen
-  }
+  // 3. ABZÜGE
+  if (comp.crop_issue) score = Math.min(score, 6.0);
+  if (tech.noise_score < 3 && !tech.is_intentional) score -= 0.5; 
 
-  // Rauschen ist KEIN K.O., gibt aber leichten Abzug (0.5 Punkte),
-  // wenn es wirklich schlimm ist (Score < 3)
-  if (tech.noise_score < 3 && !tech.is_intentional) {
-    score -= 0.5; 
-  }
-
-  // MAPPING AUF STERNE (1-5)
-  // Wir sind strenger bei den Top-Noten
-  if (score >= 8.5) return 5; // Meisterwerk
-  if (score >= 7.0) return 4; // Sehr gut (Stock Quality)
-  if (score >= 5.0) return 3; // Gut / Brauchbar
-  if (score >= 3.0) return 2; // Mangelhaft
-  return 1; // Ausschuss
+  // MAPPING
+  if (score >= 8.5) return 5;
+  if (score >= 7.0) return 4;
+  if (score >= 5.0) return 3;
+  if (score >= 3.0) return 2;
+  return 1;
 };
 
 // --- XMP GENERATOR ---
@@ -70,7 +56,6 @@ const createXmpContent = (data) => {
   let userComment = "Imported by Lumina Pipeline";
 
   if (data.analysis) {
-    // Caption
     if (data.analysis.subject) {
       descriptionBlock = `
    <dc:description>
@@ -86,17 +71,19 @@ const createXmpContent = (data) => {
     // A) Rating Header
     if (data.rating > 0) {
        lines.push(`RATING: ${data.rating}/5 Stars`);
-       // Details
+       
        if (data.technical) {
          lines.push(`[Tech] Focus: ${data.technical.focus_score}/10 | Noise: ${data.technical.noise_score}/10 ${data.technical.noise_score < 5 ? '(DENOISE NEEDED)' : ''}`);
-         if (data.technical.is_intentional) lines.push("NOTE: Artistic Intent Detected (Blur/Exp ignored)");
+         if (data.technical.is_intentional) lines.push("NOTE: Artistic Intent Detected");
        }
-       if (data.composition) {
-         lines.push(`[Comp] Score: ${data.composition.score}/10 ${data.composition.crop_issue ? '(CROP ISSUE)' : ''}`);
+       
+       // NEU: COLOR REPORT
+       if (data.color_analysis && data.color_analysis.cast_detected) {
+         lines.push(`[Color] ⚠️ CAST: ${data.color_analysis.cast_color} (Conf: ${data.color_analysis.confidence}/10)`);
+         lines.push(`[Color] FIX: ${data.color_analysis.correction_hint}`);
        }
-       if (data.aesthetic) {
-         lines.push(`[Vibe] Commercial: ${data.aesthetic.commercial_appeal}/10`);
-       }
+
+       if (data.composition) lines.push(`[Comp] Score: ${data.composition.score}/10`);
        lines.push("--------------------------------");
     }
     
@@ -204,14 +191,14 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
       colorSpace: tags['ColorSpace']?.value || 65535 
     };
 
-    // 2. AI Analyse (Profi Mode)
-    onStatus("Sende an Gemini (Curator)...");
+    // 2. AI Analyse
+    onStatus("Sende an Gemini (Colorist)...");
     
-    // Flache Struktur für die DB
     let aiResult = { 
         keywords: [], 
         analysis: null, 
         technical: null, 
+        color_analysis: null, // NEU
         composition: null, 
         aesthetic: null,
         rating: 0 
@@ -224,10 +211,11 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
         if (result.keywords) aiResult.keywords = result.keywords;
         if (result.analysis) aiResult.analysis = result.analysis;
         if (result.technical) aiResult.technical = result.technical;
+        if (result.color_analysis) aiResult.color_analysis = result.color_analysis; // NEU
         if (result.composition) aiResult.composition = result.composition;
         if (result.aesthetic) aiResult.aesthetic = result.aesthetic;
         
-        // Rating berechnen (Logic Engine)
+        // Rating berechnen
         if (aiResult.technical) {
             aiResult.rating = calculateSmartRating(aiResult);
             onStatus(`⭐ AI Rating: ${aiResult.rating}/5`);
@@ -240,11 +228,7 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
 
     // 3. XMP Generieren
     onStatus("Generiere Smart XMP...");
-    const xmpString = createXmpContent({ 
-        ...aiResult, // Spreadet rating, keywords, technical, etc.
-        exif: exifData 
-    });
-    
+    const xmpString = createXmpContent({ ...aiResult, exif: exifData });
     const xmpBlob = new Blob([xmpString], { type: "application/xml" });
     const xmpName = rawFile.name.substring(0, rawFile.name.lastIndexOf('.')) + ".xmp";
     const xmpFile = new File([xmpBlob], xmpName);

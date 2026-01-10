@@ -2,9 +2,8 @@ import { createSignal, Show, For } from 'solid-js';
 import { processAssetBundle } from './services/CoreBrain';
 import './App.css';
 
-// --- STYLES: Scrollbar & Sterne ---
+// --- STYLES ---
 const styles = `
-  /* Webkit Scrollbar Force */
   .vision-scroll::-webkit-scrollbar {
     width: 8px !important;
     display: block !important;
@@ -20,14 +19,13 @@ const styles = `
   .vision-scroll::-webkit-scrollbar-thumb:hover {
     background: #555 !important; 
   }
-  /* Firefox Fallback */
   .vision-scroll {
     scrollbar-width: thin;
     scrollbar-color: #333 #080808;
   }
 `;
 
-// --- HELPER: Zahl zu Sternen ---
+// --- HELPER ---
 const renderStars = (rating) => {
   const r = rating || 0;
   return "★".repeat(r) + "☆".repeat(5 - r);
@@ -133,7 +131,7 @@ function App() {
       <div class="left-sidebar">
         <div style={{ padding: '16px', borderBottom: '1px solid #222' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600', letterSpacing: '-0.02em' }}>Lumina Ingest</h3>
-          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.5 Curator</div>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.6 Colorist</div>
         </div>
 
         <div style={{ padding: '16px' }}>
@@ -159,7 +157,6 @@ function App() {
            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '11px' }}>Waiting for Input...</div>
         }>
           
-          {/* BILD */}
           <div style={{ 
             flex: '1',            
             minHeight: '0',       
@@ -180,7 +177,7 @@ function App() {
             }} />
           </div>
 
-          {/* AI READOUT (Mit Sternen!) */}
+          {/* AI READOUT */}
           <div class="vision-scroll" style={{ 
             height: '250px',        
             flexShrink: 0,          
@@ -197,27 +194,32 @@ function App() {
                 <span class="blink">/// ANALYZING SIGNAL...</span>
               </div>
             }>
-              {/* HEADER MIT STERNEN */}
+              {/* HEADER MIT STERNEN & WARNUNGEN */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #222', paddingBottom: '8px' }}>
                  <div style={{ fontSize: '9px', color: '#4d8', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 'bold' }}>
                    /// GEMINI CURATOR
                  </div>
                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {/* SCORES KLEIN */}
-                    <Show when={activeExif()?.ai?.scores}>
-                      <div style={{ display: 'flex', gap: '4px', fontSize: '9px', color: '#555' }}>
-                        <span title="Focus">F:{activeExif().ai.scores.focus}</span>
-                        <span title="Exposure">E:{activeExif().ai.scores.exposure}</span>
-                        <span title="Composition">C:{activeExif().ai.scores.composition}</span>
-                      </div>
+                    
+                    {/* WARNUNGEN (Color / Noise) */}
+                    <Show when={activeExif()?.ai?.color_analysis?.cast_detected}>
+                       <span style={{ fontSize: '9px', background: '#320', color: '#fb4', padding: '2px 4px', borderRadius:'2px', border:'1px solid #530' }}>
+                         COLOR: {activeExif().ai.color_analysis.cast_color}
+                       </span>
                     </Show>
-                    {/* STERNE GROSS */}
+                    <Show when={activeExif()?.ai?.technical?.noise_score < 5}>
+                       <span style={{ fontSize: '9px', background: '#023', color: '#aaf', padding: '2px 4px', borderRadius:'2px', border:'1px solid #035' }}>
+                         NOISE
+                       </span>
+                    </Show>
+
                     <div style={{ color: '#ffd700', fontSize: '14px', letterSpacing: '1px' }}>
                       {renderStars(activeExif()?.ai?.rating)}
                     </div>
                  </div>
               </div>
               
+              {/* DETAILS */}
               <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '8px', fontSize: '10px', lineHeight: '1.5', paddingRight: '4px' }}>
                 <div style={{ color: '#555' }}>SUBJECT</div>
                 <div style={{ color: '#ccc' }}>{activeExif().ai.analysis.subject || '-'}</div>
@@ -225,6 +227,15 @@ function App() {
                 <div style={{ color: '#555' }}>LIGHT</div>
                 <div style={{ color: '#999' }}>{activeExif().ai.analysis.lighting || '-'}</div>
                 
+                {/* NEU: Color Correction Hint */}
+                <Show when={activeExif()?.ai?.color_analysis?.cast_detected}>
+                    <div style={{ color: '#c80' }}>COLOR FIX</div>
+                    <div style={{ color: '#da6' }}>
+                       Detected {activeExif().ai.color_analysis.cast_color} Cast (Conf: {activeExif().ai.color_analysis.confidence}). 
+                       Suggestion: {activeExif().ai.color_analysis.correction_hint}
+                    </div>
+                </Show>
+
                 <div style={{ color: '#555' }}>COMP</div>
                 <div style={{ color: '#999' }}>{activeExif().ai.analysis.composition || '-'}</div>
                 
@@ -239,11 +250,10 @@ function App() {
 
       {/* 3. RIGHT SIDEBAR */}
       <div class="right-sidebar">
+        {/* ... (Bleibt gleich wie zuvor) ... */}
         <div style={{ color: '#555', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '15px', fontWeight: 'bold' }}>Status Monitor</div>
-        
         <Show when={isProcessing() || previewUrl()}>
           <div style={{ background: '#161616', borderRadius: '4px', padding: '12px', border: '1px solid #222' }}>
-            
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '11px', color: '#fff', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4f4', boxShadow: '0 0 5px #4f4' }}></div>
@@ -262,6 +272,7 @@ function App() {
                     <div style={{ fontSize: '9px', color: '#555' }}>Camera</div>
                     <div style={{ fontSize: '11px', color: '#e5e5e5', fontWeight:'500' }}>{activeExif().model}</div>
                   </div>
+                  {/* ... Rest der EXIF Daten ... */}
                   <div style={{ gridColumn: 'span 2', marginBottom: '4px' }}>
                     <div style={{ fontSize: '9px', color: '#555' }}>Lens</div>
                     <div style={{ fontSize: '11px', color: '#ccc' }}>{activeExif().lens}</div>
@@ -281,7 +292,7 @@ function App() {
                 </div>
               </div>
 
-              {/* Tags (Vertical) */}
+              {/* Tags */}
               <Show when={activeExif()?.ai?.keywords?.length > 0}>
                 <div style={{ marginTop: '20px', borderTop: '1px solid #333', paddingTop: '12px' }}>
                   <div style={{ fontSize: '9px', color: '#4d8', marginBottom: '10px', textTransform:'uppercase', fontWeight: 'bold', display:'flex', alignItems:'center', gap:'6px' }}>
@@ -314,10 +325,8 @@ function App() {
                 </div>
               </Show>
             </Show>
-
           </div>
         </Show>
-
         <Show when={!isProcessing() && !previewUrl()}>
           <div style={{ fontSize: '11px', color: '#444', fontStyle: 'italic', textAlign: 'center', marginTop: '20px' }}>
             System bereit.
