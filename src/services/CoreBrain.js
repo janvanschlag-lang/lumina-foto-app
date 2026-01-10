@@ -4,19 +4,21 @@ import { storage, db } from '../firebase';
 import ExifReader from 'exifreader';
 import { analyzeImageWithPro } from './geminiService';
 
-// --- LOGIC ENGINE ---
-const calculateSmartRating = (aiData) => {
-  if (!aiData.technical) return 0;
+// --- LOGIC ENGINE: Das "Lumina Culling System" ---
+const calculateLuminaVerdict = (aiData) => {
+  if (!aiData.technical) return { score: 0, rating: 0, flag: 'none' };
 
   const tech = aiData.technical;
   const comp = aiData.composition;
   const aest = aiData.aesthetic;
 
-  // 1. TÜRSTEHER
-  if (tech.focus_score < 5 && !tech.is_intentional) return 1;
+  // 1. TÜRSTEHER (K.O. Kriterien)
+  if (tech.focus_score < 5 && !tech.is_intentional) {
+    return { score: 1.5, rating: 1, flag: 'reject' };
+  }
 
-  // 2. BASIS-NOTE
-  let score = (
+  // 2. PRÄZISER SCORE (0.0 - 10.0)
+  let rawScore = (
     (tech.focus_score * 2) + 
     (comp.score * 1.5) + 
     (aest.score * 1.5) +
@@ -24,21 +26,44 @@ const calculateSmartRating = (aiData) => {
   ) / 6.0;
 
   // 3. ABZÜGE
-  if (comp.crop_issue) score = Math.min(score, 6.0);
-  if (tech.noise_score < 3 && !tech.is_intentional) score -= 0.5; 
+  if (comp.crop_issue) rawScore = Math.min(rawScore, 6.0);
+  if (tech.noise_score < 3 && !tech.is_intentional) rawScore -= 0.5;
 
-  // MAPPING
-  if (score >= 8.5) return 5;
-  if (score >= 7.0) return 4;
-  if (score >= 5.0) return 3;
-  if (score >= 3.0) return 2;
-  return 1;
+  // Runden
+  const finalScore = Math.round(rawScore * 10) / 10;
+
+  // 4. DER DREIKLANG (Flagging)
+  let flag = 'review';
+  let rating = 3;
+
+  if (finalScore >= 8.5) {
+    flag = 'pick';
+    rating = 5;
+  } else if (finalScore >= 7.0) {
+    flag = 'review'; // Strong Review
+    rating = 4;
+  } else if (finalScore >= 5.0) {
+    flag = 'review'; // Weak Review
+    rating = 3;
+  } else {
+    flag = 'reject';
+    rating = finalScore < 3.0 ? 1 : 2;
+  }
+
+  return { score: finalScore, rating, flag };
 };
 
-// --- XMP GENERATOR ---
+// --- XMP GENERATOR (ADOBE NATIVE) ---
 const createXmpContent = (data) => {
   const rating = data.rating || 0;
   
+  // Mapping Flag -> Lightroom Pick Status (crs:Pick)
+  // 1 = Pick, -1 = Reject, 0 (oder nichts) = Unflagged
+  let pickStatus = "";
+  if (data.flag === 'pick') pickStatus = 'crs:Pick="1"';
+  if (data.flag === 'reject') pickStatus = 'crs:Pick="-1"';
+  // Review bleibt unflagged (neutral), damit du es in LR findest
+
   // 1. Keywords
   let subjectBlock = "";
   if (data.keywords && data.keywords.length > 0) {
@@ -68,18 +93,16 @@ const createXmpContent = (data) => {
     // VISION REPORT GENERATOR
     const lines = ["--- LUMINA AI VISION REPORT ---"];
     
-    // A) Rating Header
     if (data.rating > 0) {
-       lines.push(`RATING: ${data.rating}/5 Stars`);
+       lines.push(`VERDICT: ${data.flag.toUpperCase()} (Score: ${data.score}/10 | Stars: ${data.rating}/5)`);
        
        if (data.technical) {
          lines.push(`[Tech] Focus: ${data.technical.focus_score}/10 | Noise: ${data.technical.noise_score}/10 ${data.technical.noise_score < 5 ? '(DENOISE NEEDED)' : ''}`);
          if (data.technical.is_intentional) lines.push("NOTE: Artistic Intent Detected");
        }
        
-       // NEU: COLOR REPORT
        if (data.color_analysis && data.color_analysis.cast_detected) {
-         lines.push(`[Color] ⚠️ CAST: ${data.color_analysis.cast_color} (Conf: ${data.color_analysis.confidence}/10)`);
+         lines.push(`[Color] ⚠️ CAST: ${data.color_analysis.cast_color}`);
          lines.push(`[Color] FIX: ${data.color_analysis.correction_hint}`);
        }
 
@@ -87,7 +110,6 @@ const createXmpContent = (data) => {
        lines.push("--------------------------------");
     }
     
-    // B) Text Analysis
     lines.push(`Subject: ${data.analysis.subject || '-'}`);
     lines.push(`Lighting: ${data.analysis.lighting || '-'}`);
     lines.push(`Composition: ${data.analysis.composition || '-'}`);
@@ -96,7 +118,7 @@ const createXmpContent = (data) => {
     userComment = lines.join('\n');
   }
 
-  // 3. Technical Metadata Helpers
+  // 3. Tech Metadata
   let xmpDate = "";
   if (data.exif.dateTime && typeof data.exif.dateTime === 'string') {
     try {
@@ -112,6 +134,7 @@ const createXmpContent = (data) => {
 
   const cleanAperture = (val) => (!val || typeof val !== 'string') ? "" : val.replace('f/', '');
 
+  // HINWEIS: xmlns:crs hinzugefügt für Adobe Camera Raw Settings
   return `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -120,9 +143,11 @@ const createXmpContent = (data) => {
     xmlns:tiff="http://ns.adobe.com/tiff/1.0/"
     xmlns:exif="http://ns.adobe.com/exif/1.0/"
     xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
     xmlns:aux="http://ns.adobe.com/exif/1.0/aux/"
     xmlns:dc="http://purl.org/dc/elements/1.1/"
     xmp:Rating="${rating}"
+    ${pickStatus}
     xmp:CreateDate="${xmpDate}"
     xmp:ModifyDate="${xmpDate}">
    
@@ -172,7 +197,7 @@ const formatLensName = (tags) => {
 
 export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
   try {
-    // 1. EXIF lesen
+    // 1. EXIF
     onStatus(`Lese EXIF aus ${rawFile.name}...`);
     const tags = await ExifReader.load(rawFile);
     
@@ -192,33 +217,38 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
     };
 
     // 2. AI Analyse
-    onStatus("Sende an Gemini (Colorist)...");
+    onStatus("Sende an Gemini (Verdict)...");
     
     let aiResult = { 
         keywords: [], 
         analysis: null, 
         technical: null, 
-        color_analysis: null, // NEU
+        color_analysis: null,
         composition: null, 
         aesthetic: null,
-        rating: 0 
+        rating: 0,
+        score: 0,
+        flag: 'none'
     };
     
     try {
         const result = await analyzeImageWithPro(previewFile);
         
-        // Daten übertragen
         if (result.keywords) aiResult.keywords = result.keywords;
         if (result.analysis) aiResult.analysis = result.analysis;
         if (result.technical) aiResult.technical = result.technical;
-        if (result.color_analysis) aiResult.color_analysis = result.color_analysis; // NEU
+        if (result.color_analysis) aiResult.color_analysis = result.color_analysis;
         if (result.composition) aiResult.composition = result.composition;
         if (result.aesthetic) aiResult.aesthetic = result.aesthetic;
         
-        // Rating berechnen
+        // VERDICT BERECHNEN
         if (aiResult.technical) {
-            aiResult.rating = calculateSmartRating(aiResult);
-            onStatus(`⭐ AI Rating: ${aiResult.rating}/5`);
+            const verdict = calculateLuminaVerdict(aiResult);
+            aiResult.rating = verdict.rating;
+            aiResult.score = verdict.score;
+            aiResult.flag = verdict.flag;
+            
+            onStatus(`⭐ Verdict: ${aiResult.flag.toUpperCase()} (${aiResult.score}/10)`);
         }
 
     } catch (aiError) {

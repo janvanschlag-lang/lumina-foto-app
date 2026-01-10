@@ -131,7 +131,7 @@ function App() {
       <div class="left-sidebar">
         <div style={{ padding: '16px', borderBottom: '1px solid #222' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600', letterSpacing: '-0.02em' }}>Lumina Ingest</h3>
-          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.6 Colorist</div>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.7 Verdict</div>
         </div>
 
         <div style={{ padding: '16px' }}>
@@ -177,7 +177,7 @@ function App() {
             }} />
           </div>
 
-          {/* AI READOUT */}
+          {/* AI READOUT (NEW CHIP UI) */}
           <div class="vision-scroll" style={{ 
             height: '250px',        
             flexShrink: 0,          
@@ -194,17 +194,64 @@ function App() {
                 <span class="blink">/// ANALYZING SIGNAL...</span>
               </div>
             }>
-              {/* HEADER MIT STERNEN & WARNUNGEN */}
+              
+              {/* THE VERDICT HEADER */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #222', paddingBottom: '8px' }}>
-                 <div style={{ fontSize: '9px', color: '#4d8', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 'bold' }}>
-                   /// GEMINI CURATOR
+                 
+                 {/* LEFT: FLAG CHIPS (Monochrome) */}
+                 <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                    
+                    {/* PICK CHIP */}
+                    <Show when={activeExif()?.ai?.flag === 'pick'}>
+                       <div style={{ 
+                         display:'flex', alignItems:'center', gap:'6px', 
+                         background:'#eee', color:'#000', 
+                         padding:'2px 8px 2px 4px', borderRadius:'12px', 
+                         fontSize:'10px', fontWeight:'bold' 
+                       }}>
+                         <div style={{ width:'14px', height:'14px', borderRadius:'50%', background:'#000', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'9px' }}>✓</div>
+                         PICK
+                       </div>
+                    </Show>
+
+                    {/* REJECT CHIP */}
+                    <Show when={activeExif()?.ai?.flag === 'reject'}>
+                       <div style={{ 
+                         display:'flex', alignItems:'center', gap:'6px', 
+                         background:'#333', color:'#fff', 
+                         padding:'2px 8px 2px 4px', borderRadius:'12px', 
+                         fontSize:'10px', fontWeight:'bold', border:'1px solid #555' 
+                       }}>
+                         <div style={{ width:'14px', height:'14px', borderRadius:'50%', background:'#fff', color:'#000', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'9px' }}>✕</div>
+                         REJECT
+                       </div>
+                    </Show>
+
+                    {/* REVIEW CHIP */}
+                    <Show when={activeExif()?.ai?.flag === 'review'}>
+                       <div style={{ 
+                         display:'flex', alignItems:'center', gap:'6px', 
+                         background:'#222', color:'#ccc', 
+                         padding:'2px 8px 2px 4px', borderRadius:'12px', 
+                         fontSize:'10px', fontWeight:'bold', border:'1px solid #444' 
+                       }}>
+                         <div style={{ width:'12px', height:'12px', borderRadius:'50%', border:'1px solid #ccc' }}></div>
+                         REVIEW
+                       </div>
+                    </Show>
+
+                    {/* SCORE NUMERIC */}
+                    <div style={{ fontSize: '11px', color: '#666', borderLeft:'1px solid #333', paddingLeft:'8px' }}>
+                       {activeExif()?.ai?.score} / 10
+                    </div>
                  </div>
+
+                 {/* RIGHT: STARS & WARNINGS */}
                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     
-                    {/* WARNUNGEN (Color / Noise) */}
                     <Show when={activeExif()?.ai?.color_analysis?.cast_detected}>
                        <span style={{ fontSize: '9px', background: '#320', color: '#fb4', padding: '2px 4px', borderRadius:'2px', border:'1px solid #530' }}>
-                         COLOR: {activeExif().ai.color_analysis.cast_color}
+                         COLOR
                        </span>
                     </Show>
                     <Show when={activeExif()?.ai?.technical?.noise_score < 5}>
@@ -227,7 +274,6 @@ function App() {
                 <div style={{ color: '#555' }}>LIGHT</div>
                 <div style={{ color: '#999' }}>{activeExif().ai.analysis.lighting || '-'}</div>
                 
-                {/* NEU: Color Correction Hint */}
                 <Show when={activeExif()?.ai?.color_analysis?.cast_detected}>
                     <div style={{ color: '#c80' }}>COLOR FIX</div>
                     <div style={{ color: '#da6' }}>
@@ -250,7 +296,7 @@ function App() {
 
       {/* 3. RIGHT SIDEBAR */}
       <div class="right-sidebar">
-        {/* ... (Bleibt gleich wie zuvor) ... */}
+        {/* RECHTE LEISTE BLEIBT WIE SIE WAR */}
         <div style={{ color: '#555', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '15px', fontWeight: 'bold' }}>Status Monitor</div>
         <Show when={isProcessing() || previewUrl()}>
           <div style={{ background: '#161616', borderRadius: '4px', padding: '12px', border: '1px solid #222' }}>
@@ -272,7 +318,6 @@ function App() {
                     <div style={{ fontSize: '9px', color: '#555' }}>Camera</div>
                     <div style={{ fontSize: '11px', color: '#e5e5e5', fontWeight:'500' }}>{activeExif().model}</div>
                   </div>
-                  {/* ... Rest der EXIF Daten ... */}
                   <div style={{ gridColumn: 'span 2', marginBottom: '4px' }}>
                     <div style={{ fontSize: '9px', color: '#555' }}>Lens</div>
                     <div style={{ fontSize: '11px', color: '#ccc' }}>{activeExif().lens}</div>
