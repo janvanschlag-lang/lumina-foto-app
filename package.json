@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "exifreader": "^4.35.0",
     "firebase": "^12.7.0",
     "solid-js": "^1.7.8"

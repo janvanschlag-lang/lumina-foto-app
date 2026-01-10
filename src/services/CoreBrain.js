@@ -2,36 +2,43 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, addDoc } from "firebase/firestore";
 import { storage, db } from '../firebase';
 import ExifReader from 'exifreader';
+// WICHTIG: Die Verbindung zur Intelligenz
+import { analyzeImageWithPro } from './geminiService';
 
-// --- XMP GENERATOR ---
+// --- XMP GENERATOR (Mit Keywords & Deep Metadata) ---
 const createXmpContent = (data) => {
-  const rating = 0;
+  const rating = data.rating || 0;
   const label = "";
   
-  // 1. Datum formatieren (Sicherer Check)
+  // 1. Keywords (AI) in XMP Struktur verwandeln
+  let subjectBlock = "";
+  if (data.keywords && data.keywords.length > 0) {
+    // Jedes Keyword wird ein Listen-Eintrag
+    const listItems = data.keywords.map(k => `<rdf:li>${k}</rdf:li>`).join('\n     ');
+    subjectBlock = `
+   <dc:subject>
+    <rdf:Bag>
+     ${listItems}
+    </rdf:Bag>
+   </dc:subject>`;
+  }
+
+  // 2. Datum formatieren
   let xmpDate = "";
   if (data.exif.dateTime && typeof data.exif.dateTime === 'string') {
     try {
         xmpDate = data.exif.dateTime.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3T');
-    } catch (e) {
-        console.warn("Datums-Formatierung fehlgeschlagen:", e);
-    }
+    } catch (e) { console.warn("Date error", e); }
   }
 
-  // 2. Fokus-Distanz (Sicherer Check)
+  // 3. Fokus-Distanz
   let focusDistanceLine = "";
   if (data.exif.focusDistance && typeof data.exif.focusDistance === 'string') {
     const distVal = data.exif.focusDistance.replace(/[^\d.]/g, ''); 
-    if (distVal && distVal.length > 0) {
-      focusDistanceLine = `<aux:ApproximateFocusDistance>${distVal}</aux:ApproximateFocusDistance>`;
-    }
+    if (distVal) focusDistanceLine = `<aux:ApproximateFocusDistance>${distVal}</aux:ApproximateFocusDistance>`;
   }
 
-  // 3. Blende bereinigen
-  const cleanAperture = (val) => {
-      if (!val || typeof val !== 'string') return "";
-      return val.replace('f/', '');
-  };
+  const cleanAperture = (val) => (!val || typeof val !== 'string') ? "" : val.replace('f/', '');
 
   return `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -42,12 +49,14 @@ const createXmpContent = (data) => {
     xmlns:exif="http://ns.adobe.com/exif/1.0/"
     xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
     xmlns:aux="http://ns.adobe.com/exif/1.0/aux/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
     xmp:Rating="${rating}"
     xmp:Label="${label}"
     xmp:CreateDate="${xmpDate}"
     xmp:ModifyDate="${xmpDate}">
    
    <xmp:UserComment>Imported by Lumina Pipeline</xmp:UserComment>
+   ${subjectBlock}
    
    <tiff:Make>NIKON CORPORATION</tiff:Make>
    <tiff:Model>${data.exif.model}</tiff:Model>
@@ -59,11 +68,7 @@ const createXmpContent = (data) => {
    
    <exif:ExposureTime>${data.exif.shutter}</exif:ExposureTime>
    <exif:FNumber>${cleanAperture(data.exif.aperture)}</exif:FNumber>
-   <exif:ISOSpeedRatings>
-    <rdf:Seq>
-     <rdf:li>${data.exif.iso}</rdf:li>
-    </rdf:Seq>
-   </exif:ISOSpeedRatings>
+   <exif:ISOSpeedRatings><rdf:Seq><rdf:li>${data.exif.iso}</rdf:li></rdf:Seq></exif:ISOSpeedRatings>
    
    <exif:ExposureProgram>${data.exif.program}</exif:ExposureProgram>
    <exif:MeteringMode>${data.exif.metering}</exif:MeteringMode>
@@ -76,19 +81,16 @@ const createXmpContent = (data) => {
 <?xpacket end="w"?>`;
 };
 
-// --- HELPER: Objektiv-Namen erraten ---
+// --- HELPER: Objektiv-Namen ---
 const formatLensName = (tags) => {
   const explicitName = tags['Lens']?.description || tags['LensModel']?.description || tags['LensID']?.description;
   if (explicitName) return explicitName;
-
   const focal = tags['FocalLength']?.description;
   const aperture = tags['MaxApertureValue']?.description; 
-
   if (focal && aperture) {
     const fValNum = parseFloat(aperture);
     if (!isNaN(fValNum)) {
-        const fVal = Math.round(fValNum * 10) / 10; 
-        return `${focal} f/${fVal}`;
+        return `${focal} f/${Math.round(fValNum * 10) / 10}`;
     }
   }
   return focal || "Unbekanntes Objektiv";
@@ -97,41 +99,55 @@ const formatLensName = (tags) => {
 // --- CORE LOGIC ---
 
 export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
-  const bundleId = rawFile.name;
   
   try {
+    // 1. EXIF aus dem RAW lesen
     onStatus(`Lese EXIF aus ${rawFile.name}...`);
     const tags = await ExifReader.load(rawFile);
     
-    // Daten extrahieren (Mit Fallbacks für alles)
+    // Daten extrahieren
     const exifData = {
       model: tags['Model']?.description || "Unbekannt",
       lens: formatLensName(tags),
       iso: tags['ISOSpeedRatings']?.description || tags['ISOSpeedRatings']?.value || "--",
       aperture: tags['FNumber']?.description || "--",
       shutter: tags['ExposureTime']?.description || "--",
-      
-      // Deep Metadata
       dateTime: tags['DateTimeOriginal']?.description || tags['DateTime']?.description || null,
       program: tags['ExposureProgram']?.description || "Normal", 
       metering: tags['MeteringMode']?.description || "Pattern",
       whiteBalance: tags['WhiteBalance']?.description || "Auto",
-      
-      // Safety Check für Firestore (kein undefined)
       focusDistance: tags['FocusDistance']?.description || tags['SubjectDistance']?.description || null,
-      
-      // NEU: Orientierung & Farbraum (mit Defaults)
-      // 1 = Horizontal (Normal), 65535 = Uncalibrated (oft AdobeRGB)
       orientation: tags['Orientation']?.value || 1,
       colorSpace: tags['ColorSpace']?.value || 65535 
     };
 
-    // 2. AI Analyse (Mock)
-    const aiResult = { score: 0 }; 
+    // 2. ECHTE AI ANALYSE (Gemini Flash)
+    onStatus("Sende Bild an Gemini (Analyse)...");
+    
+    // Default Werte, falls AI scheitert
+    let aiResult = { keywords: [], score: 0, rating: 0 };
+    
+    try {
+        // Wir schicken das kleine JPG Proxy zur Analyse (schnell!)
+        const analysis = await analyzeImageWithPro(previewFile);
+        
+        if (analysis && analysis.keywords) {
+            aiResult.keywords = analysis.keywords;
+            onStatus(`🤖 AI Schlagworte: ${analysis.keywords.slice(0, 3).join(", ")}...`);
+        }
+    } catch (aiError) {
+        console.warn("AI Fehler (ignoriert):", aiError);
+        onStatus("⚠️ AI Analyse fehlgeschlagen (nutze nur EXIF).");
+    }
 
-    // 3. XMP Generieren
-    onStatus("Generiere XMP...");
-    const xmpString = createXmpContent({ score: aiResult.score, exif: exifData });
+    // 3. XMP Generieren (Mit AI Keywords!)
+    onStatus("Generiere Smart XMP...");
+    const xmpString = createXmpContent({ 
+        rating: aiResult.rating, 
+        keywords: aiResult.keywords, 
+        exif: exifData 
+    });
+    
     const xmpBlob = new Blob([xmpString], { type: "application/xml" });
     const xmpName = rawFile.name.substring(0, rawFile.name.lastIndexOf('.')) + ".xmp";
     const xmpFile = new File([xmpBlob], xmpName);
@@ -139,7 +155,6 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
     // 4. Upload
     const assetBaseName = rawFile.name.substring(0, rawFile.name.lastIndexOf('.'));
     const assetPath = `assets/${assetBaseName}`; 
-    
     onStatus(`Upload Bundle...`);
     
     const upload = async (file, pathName) => {
@@ -154,11 +169,12 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
       upload(xmpFile, xmpFile.name)
     ]);
 
-    // 5. DB Eintrag
+    // 5. DB Eintrag (inklusive AI Ergebnisse)
     onStatus("Registriere Asset in Datenbank...");
     await addDoc(collection(db, "assets"), {
       filename: rawFile.name,
       exif: exifData,
+      ai: aiResult, // Speichern wir auch in der DB für spätere Suche!
       urls: { raw: rawUrl, preview: previewCloudUrl, xmp: xmpUrl },
       uploadedAt: new Date()
     });
