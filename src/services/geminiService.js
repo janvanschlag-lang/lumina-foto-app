@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Wir nutzen den stabilen Alias für Gemini 2.5 Flash
+// Standard: Gemini 2.5 Flash (Schnell & Multimodal)
 const MODEL_NAME = "gemini-2.5-flash";
 
 const getApiKey = () => {
@@ -24,9 +24,7 @@ const fileToGenerativePart = async (file) => {
 };
 
 /**
- * Hauptfunktion: Analysiert das Bild mit Gemini Vision
- * @param {File} imageFile - Das JPG Proxy Bild
- * @returns {Promise<{keywords: string[], analysis: object, raw: string}>}
+ * Hauptfunktion: Analysiert das Bild mit Gemini Vision (Curator Mode)
  */
 export const analyzeImageWithPro = async (imageFile) => {
   try {
@@ -34,32 +32,40 @@ export const analyzeImageWithPro = async (imageFile) => {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    // DER NEUE PROMPT: COMPUTER VISION SYSTEM (Neutral & Faktisch)
-    // Wir fordern jetzt ein komplexes JSON Objekt an, nicht nur eine Liste.
+    // DER CURATOR PROMPT
+    // Wir fordern: Keywords + Analyse + SCORING (Harte Zahlen)
     const prompt = `
-      You are a high-precision Computer Vision System for a stock photography database.
-      Analyze the input image based on strictly visible visual data. Do not hallucinate details.
+      You are a strict AI Photo Editor & Curator (TÜV-Prüfer style).
+      Analyze the input image based on strictly visible visual data.
       
       Task:
-      1. KEYWORDS: Generate 10-15 English keywords (Subjects, Action, Mood, Tech).
-      2. VISUAL ANALYSIS: Provide a structured assessment of the image quality and content.
+      1. KEYWORDS: Generate 10-15 English keywords (Stock photography standard).
+      2. VISUAL ANALYSIS: Brief structured assessment (Subject, Light, Composition).
+      3. SCORING: Rate the image strictly (0-10 integers) on technical standards.
+         - focus: Sharpness of the main subject (10=Perfect eye sharpness, 1=Blurry).
+         - exposure: Histogram balance (10=Perfect dynamic range, 1=Heavy clipping).
+         - composition: Framing & Aesthetics (10=Masterpiece, 1=Poor/Cropped).
       
-      Response Format:
-      Return ONLY a valid JSON object with this exact structure:
+      Response Format (JSON ONLY):
       {
-        "keywords": ["Keyword1", "Keyword2", ...],
+        "keywords": ["Mallard", "Duck", ...],
         "analysis": {
-          "subject": "Description of the main subject and its sharpness (e.g. 'Mallard duck in focus, side profile')",
-          "lighting": "Description of lighting conditions (e.g. 'Soft diffuse daylight, no harsh shadows')",
-          "composition": "Description of framing and background (e.g. 'Subject centered, bokeh background')",
-          "technical": "Note on technical quality (e.g. 'High noise visible' or 'Clean and sharp')"
+          "subject": "...",
+          "lighting": "...",
+          "composition": "...",
+          "technical": "..."
+        },
+        "scores": {
+          "focus": 8,
+          "exposure": 9,
+          "composition": 7
         }
       }
     `;
 
     const imagePart = await fileToGenerativePart(imageFile);
 
-    console.log(`🤖 Sende Bild an ${MODEL_NAME} (Vision Mode)...`);
+    console.log(`🤖 Sende Bild an ${MODEL_NAME} (Curator Mode)...`);
     
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
@@ -67,25 +73,23 @@ export const analyzeImageWithPro = async (imageFile) => {
 
     console.log("🤖 AI Roh-Antwort:", text);
 
-    // Cleanup JSON
     const jsonString = text.replace(/```json|```/g, "").trim();
     
     let parsedData = {};
     let keywords = [];
     let analysis = {};
+    let scores = null;
 
     try {
         parsedData = JSON.parse(jsonString);
         
-        // INTELLIGENTES PARSING (Abwärtskompatibel)
+        // Robustes Parsing
         if (Array.isArray(parsedData)) {
-            // Fallback: AI hat nur Liste geschickt (altes Verhalten)
-            keywords = parsedData;
-            analysis = { subject: "Not provided" };
+            keywords = parsedData; // Fallback
         } else {
-            // Neues Verhalten: Objekt mit keywords + analysis
             keywords = parsedData.keywords || [];
             analysis = parsedData.analysis || {};
+            scores = parsedData.scores || null; // NEU: Die Scores abgreifen
         }
 
     } catch (e) {
@@ -95,13 +99,14 @@ export const analyzeImageWithPro = async (imageFile) => {
     }
 
     return { 
-      keywords: Array.isArray(keywords) ? keywords : [],
-      analysis: analysis,
+      keywords,
+      analysis,
+      scores, // Das geben wir jetzt zurück!
       raw: text 
     };
 
   } catch (error) {
     console.error("AI Analyse fehlgeschlagen:", error);
-    return { keywords: [], analysis: {}, error: error.message };
+    return { keywords: [], analysis: {}, scores: null, error: error.message };
   }
 };

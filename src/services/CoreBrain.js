@@ -4,11 +4,27 @@ import { storage, db } from '../firebase';
 import ExifReader from 'exifreader';
 import { analyzeImageWithPro } from './geminiService';
 
-// --- XMP GENERATOR (Mit Description & Full Report) ---
+// --- HELPER: Sterne-Rechner ---
+const calculateStarRating = (scores) => {
+  if (!scores) return 0;
+  
+  // Durchschnitt berechnen (0-10)
+  // Wir gewichten Fokus etwas höher, weil unscharfe Bilder wertlos sind
+  const weightedScore = (scores.focus * 1.2 + scores.exposure + scores.composition) / 3.2;
+  
+  // Mapping auf 1-5 Sterne
+  if (weightedScore >= 9.0) return 5; // Absolute Spitzenklasse
+  if (weightedScore >= 7.5) return 4; // Sehr gut
+  if (weightedScore >= 5.5) return 3; // Gut / Durchschnitt
+  if (weightedScore >= 3.0) return 2; // Mangelhaft
+  return 1; // Ausschuss
+};
+
+// --- XMP GENERATOR ---
 const createXmpContent = (data) => {
   const rating = data.rating || 0;
   
-  // 1. Keywords (AI)
+  // 1. Keywords
   let subjectBlock = "";
   if (data.keywords && data.keywords.length > 0) {
     const listItems = data.keywords.map(k => `<rdf:li>${k}</rdf:li>`).join('\n     ');
@@ -20,12 +36,11 @@ const createXmpContent = (data) => {
    </dc:subject>`;
   }
 
-  // 2. AI Analyse & Description (NEU!)
+  // 2. AI Report (Jetzt mit Scores!)
   let descriptionBlock = "";
-  let userComment = "Imported by Lumina Pipeline"; // Default
+  let userComment = "Imported by Lumina Pipeline";
 
   if (data.analysis) {
-    // A) Caption / Description für Lightroom (Nimmt das Hauptmotiv)
     if (data.analysis.subject) {
       descriptionBlock = `
    <dc:description>
@@ -35,20 +50,23 @@ const createXmpContent = (data) => {
    </dc:description>`;
     }
 
-    // B) Detaillierter Report im UserComment
-    // Wir bauen einen gut lesbaren Textblock
-    const report = [
-      "--- LUMINA AI VISION REPORT ---",
-      `Subject: ${data.analysis.subject || '-'}`,
-      `Lighting: ${data.analysis.lighting || '-'}`,
-      `Composition: ${data.analysis.composition || '-'}`,
-      `Tech Check: ${data.analysis.technical || '-'}`
-    ].join('\n');
+    // Report zusammenbauen (inklusive Scores, falls vorhanden)
+    const lines = ["--- LUMINA AI VISION REPORT ---"];
     
-    userComment = report;
+    if (data.scores) {
+       lines.push(`RATING: ${rating}/5 Stars (Focus: ${data.scores.focus}, Exp: ${data.scores.exposure}, Comp: ${data.scores.composition})`);
+       lines.push("--------------------------------");
+    }
+    
+    lines.push(`Subject: ${data.analysis.subject || '-'}`);
+    lines.push(`Lighting: ${data.analysis.lighting || '-'}`);
+    lines.push(`Composition: ${data.analysis.composition || '-'}`);
+    lines.push(`Tech Check: ${data.analysis.technical || '-'}`);
+    
+    userComment = lines.join('\n');
   }
 
-  // 3. Datum Formatierung
+  // 3. Datum
   let xmpDate = "";
   if (data.exif.dateTime && typeof data.exif.dateTime === 'string') {
     try {
@@ -65,7 +83,6 @@ const createXmpContent = (data) => {
 
   const cleanAperture = (val) => (!val || typeof val !== 'string') ? "" : val.replace('f/', '');
 
-  // XML Zusammenbau
   return `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -147,24 +164,20 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
     };
 
     // 2. AI Analyse
-    onStatus("Sende Bild an Gemini (Analyse)...");
-    let aiResult = { keywords: [], analysis: null, rating: 0 };
+    onStatus("Sende Bild an Gemini (Curator)...");
+    let aiResult = { keywords: [], analysis: null, scores: null, rating: 0 };
     
     try {
         const result = await analyzeImageWithPro(previewFile);
         
-        // Keywords übernehmen
-        if (result.keywords) {
-            aiResult.keywords = result.keywords;
-        }
+        if (result.keywords) aiResult.keywords = result.keywords;
+        if (result.analysis) aiResult.analysis = result.analysis;
         
-        // NEU: Analyse-Daten übernehmen
-        if (result.analysis) {
-            aiResult.analysis = result.analysis;
-        }
-
-        if (aiResult.keywords.length > 0) {
-            onStatus(`🤖 AI Vision: ${aiResult.keywords.length} Tags + Analyse erstellt.`);
+        // NEU: Scores & Rating berechnen
+        if (result.scores) {
+            aiResult.scores = result.scores;
+            aiResult.rating = calculateStarRating(result.scores);
+            onStatus(`⭐ AI Rating: ${aiResult.rating}/5 (F:${result.scores.focus} E:${result.scores.exposure})`);
         }
 
     } catch (aiError) {
@@ -172,12 +185,13 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
         onStatus("⚠️ AI Analyse fehlgeschlagen (nutze nur EXIF).");
     }
 
-    // 3. XMP Generieren (Mit allen Daten)
+    // 3. XMP Generieren (Mit Rating!)
     onStatus("Generiere Smart XMP...");
     const xmpString = createXmpContent({ 
-        rating: aiResult.rating, 
+        rating: aiResult.rating,  // <--- Hier geht die Note in die XMP
         keywords: aiResult.keywords, 
-        analysis: aiResult.analysis, // WICHTIG: Das fehlte vorher!
+        analysis: aiResult.analysis, 
+        scores: aiResult.scores,
         exif: exifData 
     });
     

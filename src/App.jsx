@@ -2,7 +2,7 @@ import { createSignal, Show, For } from 'solid-js';
 import { processAssetBundle } from './services/CoreBrain';
 import './App.css';
 
-// --- STYLES: Scrollbar erzwingen ---
+// --- STYLES: Scrollbar & Sterne ---
 const styles = `
   /* Webkit Scrollbar Force */
   .vision-scroll::-webkit-scrollbar {
@@ -26,6 +26,12 @@ const styles = `
     scrollbar-color: #333 #080808;
   }
 `;
+
+// --- HELPER: Zahl zu Sternen ---
+const renderStars = (rating) => {
+  const r = rating || 0;
+  return "★".repeat(r) + "☆".repeat(5 - r);
+};
 
 // --- UI COMPONENTS ---
 
@@ -127,7 +133,7 @@ function App() {
       <div class="left-sidebar">
         <div style={{ padding: '16px', borderBottom: '1px solid #222' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600', letterSpacing: '-0.02em' }}>Lumina Ingest</h3>
-          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.4 AI Vision</div>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.5 Curator</div>
         </div>
 
         <div style={{ padding: '16px' }}>
@@ -142,23 +148,21 @@ function App() {
         <LogConsole logs={logs} />
       </div>
 
-      {/* 2. CENTER STAGE (Robustes Flex Layout) */}
+      {/* 2. CENTER STAGE */}
       <div class="center-stage" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#0e0e0e' }}>
         
-        {/* Header */}
         <div style={{ height: '30px', borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444', fontSize: '10px', fontFamily: 'monospace', flexShrink: 0, background: '#111' }}>
           {currentBundleName() || "IDLE"}
         </div>
 
-        {/* Content Wrapper */}
         <Show when={previewUrl()} fallback={
            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '11px' }}>Waiting for Input...</div>
         }>
           
-          {/* A) BILD BEREICH - Nimmt den Restplatz (flex: 1) */}
+          {/* BILD */}
           <div style={{ 
-            flex: '1',            // WICHTIG: Nimmt restlichen Platz
-            minHeight: '0',       // WICHTIG: Erlaubt Schrumpfen, verhindert Overflow
+            flex: '1',            
+            minHeight: '0',       
             width: '100%',
             display: 'flex', 
             alignItems: 'center', 
@@ -176,16 +180,16 @@ function App() {
             }} />
           </div>
 
-          {/* B) AI READOUT BEREICH - Feste Höhe oder max-height */}
+          {/* AI READOUT (Mit Sternen!) */}
           <div class="vision-scroll" style={{ 
-            height: '250px',        // Fixe Höhe für Stabilität (oder flex basis)
-            flexShrink: 0,          // Darf nicht gequetscht werden
+            height: '250px',        
+            flexShrink: 0,          
             width: '100%',
             borderTop: '1px solid #222', 
             background: '#080808', 
             padding: '12px',
             boxSizing: 'border-box',
-            overflowY: 'auto',      // Scrollen erlauben
+            overflowY: 'auto',      
             fontFamily: 'monospace'
           }}>
             <Show when={activeExif()?.ai?.analysis} fallback={
@@ -193,8 +197,25 @@ function App() {
                 <span class="blink">/// ANALYZING SIGNAL...</span>
               </div>
             }>
-              <div style={{ fontSize: '9px', color: '#4d8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px', fontWeight: 'bold', position:'sticky', top:0, background:'#080808', paddingBottom:'4px' }}>
-                /// GEMINI VISION REPORT
+              {/* HEADER MIT STERNEN */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #222', paddingBottom: '8px' }}>
+                 <div style={{ fontSize: '9px', color: '#4d8', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 'bold' }}>
+                   /// GEMINI CURATOR
+                 </div>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {/* SCORES KLEIN */}
+                    <Show when={activeExif()?.ai?.scores}>
+                      <div style={{ display: 'flex', gap: '4px', fontSize: '9px', color: '#555' }}>
+                        <span title="Focus">F:{activeExif().ai.scores.focus}</span>
+                        <span title="Exposure">E:{activeExif().ai.scores.exposure}</span>
+                        <span title="Composition">C:{activeExif().ai.scores.composition}</span>
+                      </div>
+                    </Show>
+                    {/* STERNE GROSS */}
+                    <div style={{ color: '#ffd700', fontSize: '14px', letterSpacing: '1px' }}>
+                      {renderStars(activeExif()?.ai?.rating)}
+                    </div>
+                 </div>
               </div>
               
               <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '8px', fontSize: '10px', lineHeight: '1.5', paddingRight: '4px' }}>
@@ -236,7 +257,6 @@ function App() {
             <Show when={activeExif()}>
               <div style={{ marginTop: '16px', borderTop: '1px solid #333', paddingTop: '12px' }}>
                 <div style={{ fontSize: '9px', color: '#666', marginBottom: '8px', textTransform:'uppercase', fontWeight: 'bold' }}>RAW Metadaten</div>
-                
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 4px' }}>
                   <div style={{ gridColumn: 'span 2' }}>
                     <div style={{ fontSize: '9px', color: '#555' }}>Camera</div>
@@ -261,24 +281,21 @@ function App() {
                 </div>
               </div>
 
-              {/* AI Keywords Visualisierung (Strict Vertical) */}
+              {/* Tags (Vertical) */}
               <Show when={activeExif()?.ai?.keywords?.length > 0}>
                 <div style={{ marginTop: '20px', borderTop: '1px solid #333', paddingTop: '12px' }}>
                   <div style={{ fontSize: '9px', color: '#4d8', marginBottom: '10px', textTransform:'uppercase', fontWeight: 'bold', display:'flex', alignItems:'center', gap:'6px' }}>
-                    <span>✦ Gemini Vision (Tags)</span>
+                    <span>✦ Gemini Tags</span>
                   </div>
-                  
-                  {/* FIX: Vertikale Liste */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
                     <For each={activeExif().ai.keywords.slice(0, 3)}>{(kw) => (
                       <div style={{ 
                         fontSize: '10px', 
-                        background: '#0f1f15', 
+                        background: '#111', 
                         color: '#6f9', 
                         padding: '4px 8px', 
                         borderRadius: '2px',
                         borderLeft: '2px solid #2f5f3f',
-                        background: '#111',
                         width: '100%',
                         boxSizing: 'border-box',
                         whiteSpace: 'nowrap',
