@@ -3,6 +3,7 @@ import { db, storage } from './firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { collection, addDoc } from "firebase/firestore";
 import ExifReader from 'exifreader';
+// import { analyzeImageWithPro } from './geminiService.js'; // ROLLBACK
 import './App.css';
 
 const LogConsole = (props) => {
@@ -21,13 +22,36 @@ const LogConsole = (props) => {
   );
 }
 
+// NEU: XMP Generator Funktion
+const createXmpString = (curatedExif) => {
+  // Flacht die verschachtelte Struktur für eine einfachere XMP-Darstellung ab
+  const flatExif = Object.values(curatedExif).reduce((acc, val) => ({ ...acc, ...val }), {});
+
+  let exifItems = '';
+  for (const [key, value] of Object.entries(flatExif)) {
+    if (value !== 'N/A') {
+      exifItems += `   <exif:${key}>${value}</exif:${key}>\n`;
+    }
+  }
+
+  return `
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.6-c111 79.158366, 2015/09/25-01:12:00        ">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:exif="http://ns.adobe.com/exif/1.0/">
+${exifItems}  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+  `.trim();
+};
+
 function App() {
   const [logs, setLogs] = createSignal([]);
   const [isUploading, setIsUploading] = createSignal(false);
   const [uploadProgress, setUploadProgress] = createSignal(0);
   const [previewUrl, setPreviewUrl] = createSignal(null);
-  const [exifData, setExifData] = createSignal(null); // State for curated EXIF data
-  const [allExifTags, setAllExifTags] = createSignal(null); // State for ALL EXIF tags
+  const [exifData, setExifData] = createSignal(null);
+  // const [geminiAnalysis, setGeminiAnalysis] = createSignal(null); // ROLLBACK
   const [selectedFile, setSelectedFile] = createSignal(null);
 
   const addLog = (text, type = 'info') => {
@@ -40,20 +64,20 @@ function App() {
     if (!file) {
       setPreviewUrl(null);
       setExifData(null);
-      setAllExifTags(null);
+      // setGeminiAnalysis(null); // ROLLBACK
       return;
     }
 
-    setPreviewUrl(URL.createObjectURL(file));
+    const localPreviewUrl = URL.createObjectURL(file);
+    setPreviewUrl(localPreviewUrl);
     setExifData(null);
-    setAllExifTags(null);
+    // setGeminiAnalysis("Analyse wird durchgeführt..."); // ROLLBACK
     setIsUploading(true);
     setUploadProgress(0);
     addLog(`START: Verarbeite ${file.name}...`, 'info');
 
     try {
       ExifReader.load(file).then(tags => {
-        setAllExifTags(tags);
         addLog("Lese EXIF Daten...", 'process');
 
         const getExifDesc = (tag) => (tag?.description || "N/A");
@@ -86,33 +110,58 @@ function App() {
         setExifData(curatedExif);
         addLog(`Kamera erkannt: ${curatedExif["Identifikation & Zeit"].Model}`, 'success');
 
-        addLog("Lade Bild in die Cloud...", 'process');
-        const storageRef = ref(storage, `uploads/${file.name}`);
-        const uploadTask = uploadBytesResumable(storageRef, file);
+        // XMP WORKFLOW
+        addLog("Generiere XMP Sidecar-Datei...", 'process');
+        const xmpString = createXmpString(curatedExif);
+        const xmpBlob = new Blob([xmpString], { type: 'application/rdf+xml' });
+        const xmpFileName = `${file.name}.xmp`;
 
-        uploadTask.on('state_changed', 
+        addLog("Lade Bild in die Cloud...", 'process');
+        const imageStorageRef = ref(storage, `uploads/${file.name}`);
+        const imageUploadTask = uploadBytesResumable(imageStorageRef, file);
+
+        imageUploadTask.on('state_changed', 
           (snapshot) => {
             const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
             setUploadProgress(progress);
           },
           (error) => {
-            console.error("Upload-Fehler:", error);
-            addLog("UPLOAD FEHLER: " + error.message, 'error');
+            console.error("Upload-Fehler (Bild):", error);
+            addLog(`UPLOAD FEHLER (Bild): ${error.message}`, 'error');
             setIsUploading(false);
           },
           () => {
-            getDownloadURL(uploadTask.snapshot.ref).then(async (url) => {
-              addLog("Upload fertig. URL generiert.", 'success');
-              addLog("Schreibe in Datenbank...", 'process');
-              await addDoc(collection(db, "assets"), {
-                filename: file.name,
-                url: url,
-                uploadedAt: new Date(),
-                curatedExif: curatedExif, // Store the curated data
-                allExif: tags // Store all EXIF data
-              });
-              addLog("✅ ERFOLG! Asset in Firestore gespeichert.", 'success');
-              setIsUploading(false);
+            getDownloadURL(imageUploadTask.snapshot.ref).then(async (imageUrl) => {
+              addLog("Bild-Upload fertig. URL generiert.", 'success');
+              
+              addLog("Lade XMP in die Cloud...", 'process');
+              const xmpStorageRef = ref(storage, `uploads/${xmpFileName}`);
+              const xmpUploadTask = uploadBytesResumable(xmpStorageRef, xmpBlob);
+
+              xmpUploadTask.on('state_changed', null, 
+                (error) => {
+                  console.error("Upload-Fehler (XMP):", error);
+                  addLog(`UPLOAD FEHLER (XMP): ${error.message}`, 'error');
+                  setIsUploading(false);
+                },
+                () => {
+                  getDownloadURL(xmpUploadTask.snapshot.ref).then(async (xmpUrl) => {
+                    addLog("XMP-Upload fertig. URL generiert.", 'success');
+                    addLog("Schreibe Asset in Datenbank...", 'process');
+
+                    await addDoc(collection(db, "assets"), {
+                      filename: file.name,
+                      imageUrl: imageUrl, // URL zum Bild
+                      xmpUrl: xmpUrl,   // URL zur XMP-Datei
+                      uploadedAt: new Date(),
+                      curatedExif: curatedExif,
+                      allExif: tags 
+                    });
+                    addLog("✅ ERFOLG! Asset und XMP in Firestore gespeichert.", 'success');
+                    setIsUploading(false);
+                  });
+                }
+              );
             });
           }
         );
@@ -150,6 +199,8 @@ function App() {
             <h4 style={{ marginTop: 0, color: '#999' }}>Vorschau & Metadaten</h4>
             <img src={previewUrl()} alt="Vorschau" style={{ maxHeight: '150px', width: 'auto', borderRadius: '8px', display: 'block', margin: '0 auto' }} />
             
+            {/* ROLLBACK: Gemini UI entfernt */}
+
             <Show when={exifData()}>
               <div style={{ marginTop: '15px', maxHeight: '300px', overflowY: 'auto' }}>
                 <For each={Object.entries(exifData())}>{
@@ -167,22 +218,6 @@ function App() {
                 </For>
               </div>
             </Show>
-
-            {/* 
-            MVP Fallback: Auskommentiert, aber bereit für später
-            <Show when={allExifTags() && selectedFile() && selectedFile().name.toLowerCase().endsWith('.nef')}>
-                <div style={{ marginTop: '20px', maxHeight: '250px', overflowY: 'auto', background: '#000', padding: '10px', borderRadius: '5px', border: '1px solid #333' }}>
-                    <h5 style={{ color: '#999', marginTop: '0', marginBottom:'10px' }}>Alle EXIF-Daten (.NEF):</h5>
-                    <For each={Object.entries(allExifTags())}>{
-                        ([key, value]) => (
-                            <div style={{ margin: 0, fontFamily: 'monospace', fontSize: '11px', color: '#ccc', borderBottom: '1px solid #222', paddingBottom: '4px', marginBottom: '4px' }}>
-                                <b style={{color: '#888'}}>{key}:</b> {value?.description ? value.description : JSON.stringify(value)}
-                            </div>
-                        )}
-                    </For>
-                </div>
-            </Show> 
-            */}
           </div>
         </Show>
       </div>
