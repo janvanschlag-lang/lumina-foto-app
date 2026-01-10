@@ -3,61 +3,37 @@ import { createTheme } from "@suid/material/styles";
 const theme = createTheme({
   palette: {
     mode: "dark",
-    primary: { 
-      main: "#ffffff" 
-    },
-    secondary: { 
-      main: "#a1a1aa" 
-    },
+    primary: { main: "#ffffff" },
+    secondary: { main: "#a1a1aa" },
     background: {
-      default: "#0a0a0a", // Galerie: Tiefstes Schwarz
-      paper: "#131313",   // Sidebar: Minimal heller (Subtile Trennung)
+      default: "#000000", // Galerie: Reines Schwarz (Bester Kontrast für Fotos)
+      paper: "#121212",   // Sidebar & Cards: Solides Dark Grey (Keine Transparenz)
     },
     text: {
-      primary: "#e4e4e7", // Helles Grau-Weiß (nicht hartes Weiß)
-      secondary: "#a1a1aa", // Mittelgrau für Labels
+      primary: "#e4e4e7",
+      secondary: "#a1a1aa",
     },
     warning: { main: "#fbbf24" },
     action: {
-      hover: "rgba(255, 255, 255, 0.04)", 
-      selected: "rgba(255, 255, 255, 0.08)",
+      hover: "#27272a",   // Solide Hover Farbe statt RGBA
+      selected: "#3f3f46", // Solide Selected Farbe
     }
   },
   typography: {
-    // "Inter" ist oft der Standard, sonst System Fonts. Wirkt sehr clean.
     fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-    h6: { 
-      fontSize: "0.9rem", 
-      fontWeight: 600, 
-      letterSpacing: "0.02em", 
-      textTransform: "none" // WICHTIG: Keine Großbuchstaben mehr
-    },
-    subtitle2: {
-      fontSize: "0.85rem",
-      fontWeight: 600,
-      letterSpacing: "0.01em",
-    },
-    body2: { 
-      fontSize: "0.8rem",
-      lineHeight: 1.5
-    },
-    caption: { 
-      fontSize: "0.75rem",
-      color: "#a1a1aa"
-    },
-    overline: {
-      textTransform: "none", // Auch hier normale Schreibweise
-      fontSize: "0.75rem",
-      fontWeight: 600,
-      letterSpacing: "0.05em",
-      color: "#71717a"
-    }
+    h6: { fontSize: "1.125rem", fontWeight: 600, letterSpacing: 0, textTransform: "none" },
+    subtitle2: { fontSize: "0.875rem", fontWeight: 600, letterSpacing: 0 },
+    body2: { fontSize: "0.875rem", letterSpacing: 0, lineHeight: 1.5 },
+    caption: { fontSize: "0.75rem", letterSpacing: 0, color: "#a1a1aa" },
+    overline: { fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#71717a" }
   },
   components: {
-    MuiChip: {
-      styleOverrides: {
-        root: { fontWeight: 500 }, // Etwas leichter
-      }
+    MuiChip: { styleOverrides: { root: { fontWeight: 500, fontSize: "0.75rem" } } },
+    MuiButton: { styleOverrides: { root: { textTransform: "none", fontSize: "0.875rem" } } },
+    MuiPaper: { 
+      styleOverrides: { 
+        root: { backgroundImage: 'none' } // WICHTIG: Entfernt den Material "Elevation Overlay", damit die Farbe flach bleibt
+      } 
     }
   }
 });
