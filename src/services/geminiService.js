@@ -26,7 +26,7 @@ const fileToGenerativePart = async (file) => {
 /**
  * Hauptfunktion: Analysiert das Bild mit Gemini Vision
  * @param {File} imageFile - Das JPG Proxy Bild
- * @returns {Promise<{keywords: string[], raw: string}>}
+ * @returns {Promise<{keywords: string[], analysis: object, raw: string}>}
  */
 export const analyzeImageWithPro = async (imageFile) => {
   try {
@@ -34,28 +34,32 @@ export const analyzeImageWithPro = async (imageFile) => {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    // DER NEUE PROMPT: STRICTLY ENGLISH
+    // DER NEUE PROMPT: COMPUTER VISION SYSTEM (Neutral & Faktisch)
+    // Wir fordern jetzt ein komplexes JSON Objekt an, nicht nur eine Liste.
     const prompt = `
-      Analyze this image professionally for a stock photography agency.
+      You are a high-precision Computer Vision System for a stock photography database.
+      Analyze the input image based on strictly visible visual data. Do not hallucinate details.
       
       Task:
-      1. Generate a list of 10-15 precise, descriptive keywords.
-      2. LANGUAGE: ENGLISH ONLY. No other languages.
-      3. Focus on: 
-         - Main Subject (e.g., "Mallard", "Duck")
-         - Action/State (e.g., "Flying", "Swimming")
-         - Environment (e.g., "Lake", "Outdoors")
-         - Technical/Visuals (e.g., "Bokeh", "Telephoto", "Sharp focus")
-         - Concepts/Mood (e.g., "Freedom", "Wildlife", "Nature")
+      1. KEYWORDS: Generate 10-15 English keywords (Subjects, Action, Mood, Tech).
+      2. VISUAL ANALYSIS: Provide a structured assessment of the image quality and content.
       
-      IMPORTANT: Respond ONLY with a valid JSON Array of Strings.
-      No Markdown, no explanations.
-      Example Output: ["Mallard", "Duck", "Water", "Flight", "Wildlife", "Nature", "Green", "Motion"]
+      Response Format:
+      Return ONLY a valid JSON object with this exact structure:
+      {
+        "keywords": ["Keyword1", "Keyword2", ...],
+        "analysis": {
+          "subject": "Description of the main subject and its sharpness (e.g. 'Mallard duck in focus, side profile')",
+          "lighting": "Description of lighting conditions (e.g. 'Soft diffuse daylight, no harsh shadows')",
+          "composition": "Description of framing and background (e.g. 'Subject centered, bokeh background')",
+          "technical": "Note on technical quality (e.g. 'High noise visible' or 'Clean and sharp')"
+        }
+      }
     `;
 
     const imagePart = await fileToGenerativePart(imageFile);
 
-    console.log(`🤖 Sende Bild an ${MODEL_NAME}...`);
+    console.log(`🤖 Sende Bild an ${MODEL_NAME} (Vision Mode)...`);
     
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
@@ -63,23 +67,41 @@ export const analyzeImageWithPro = async (imageFile) => {
 
     console.log("🤖 AI Roh-Antwort:", text);
 
+    // Cleanup JSON
     const jsonString = text.replace(/```json|```/g, "").trim();
     
+    let parsedData = {};
     let keywords = [];
+    let analysis = {};
+
     try {
-        keywords = JSON.parse(jsonString);
+        parsedData = JSON.parse(jsonString);
+        
+        // INTELLIGENTES PARSING (Abwärtskompatibel)
+        if (Array.isArray(parsedData)) {
+            // Fallback: AI hat nur Liste geschickt (altes Verhalten)
+            keywords = parsedData;
+            analysis = { subject: "Not provided" };
+        } else {
+            // Neues Verhalten: Objekt mit keywords + analysis
+            keywords = parsedData.keywords || [];
+            analysis = parsedData.analysis || {};
+        }
+
     } catch (e) {
         console.error("JSON Parse Fehler:", e);
-        keywords = [text]; 
+        keywords = []; 
+        analysis = { error: "Parsing Failed" };
     }
 
     return { 
       keywords: Array.isArray(keywords) ? keywords : [],
+      analysis: analysis,
       raw: text 
     };
 
   } catch (error) {
     console.error("AI Analyse fehlgeschlagen:", error);
-    return { keywords: [], error: error.message };
+    return { keywords: [], analysis: {}, error: error.message };
   }
 };
