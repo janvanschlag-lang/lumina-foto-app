@@ -2,6 +2,31 @@ import { createSignal, Show, For } from 'solid-js';
 import { processAssetBundle } from './services/CoreBrain';
 import './App.css';
 
+// --- STYLES: Scrollbar erzwingen ---
+const styles = `
+  /* Webkit Scrollbar Force */
+  .vision-scroll::-webkit-scrollbar {
+    width: 8px !important;
+    display: block !important;
+  }
+  .vision-scroll::-webkit-scrollbar-track {
+    background: #080808 !important; 
+  }
+  .vision-scroll::-webkit-scrollbar-thumb {
+    background: #333 !important; 
+    border-radius: 4px !important;
+    border: 1px solid #080808 !important;
+  }
+  .vision-scroll::-webkit-scrollbar-thumb:hover {
+    background: #555 !important; 
+  }
+  /* Firefox Fallback */
+  .vision-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #333 #080808;
+  }
+`;
+
 // --- UI COMPONENTS ---
 
 const LogConsole = (props) => {
@@ -96,6 +121,7 @@ function App() {
 
   return (
     <div class="app-grid-container">
+      <style>{styles}</style>
       
       {/* 1. LEFT SIDEBAR */}
       <div class="left-sidebar">
@@ -116,55 +142,78 @@ function App() {
         <LogConsole logs={logs} />
       </div>
 
-      {/* 2. CENTER STAGE (Updated Layout) */}
-      <div class="center-stage" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* 2. CENTER STAGE (Robustes Flex Layout) */}
+      <div class="center-stage" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#0e0e0e' }}>
         
-        {/* Header Zeile */}
-        <div style={{ height: '40px', borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444', fontSize: '11px', fontFamily: 'monospace', flexShrink: 0, background: '#111' }}>
-          {currentBundleName() || "WARTE AUF EINGABE"}
+        {/* Header */}
+        <div style={{ height: '30px', borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444', fontSize: '10px', fontFamily: 'monospace', flexShrink: 0, background: '#111' }}>
+          {currentBundleName() || "IDLE"}
         </div>
 
-        {/* Oberer Bereich: BILD (Flexibel) */}
-        <div style={{ flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: '20px', background: '#0e0e0e' }}>
-          <Show when={previewUrl()} fallback={
-            <div style={{ color: '#333', fontSize: '12px' }}>Keine Vorschau</div>
-          }>
-            <img src={previewUrl()} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} />
-          </Show>
-        </div>
-
-        {/* Unterer Bereich: AI READOUT (Fixe Höhe oder flexibel) */}
-        <Show when={activeExif()?.ai?.analysis}>
+        {/* Content Wrapper */}
+        <Show when={previewUrl()} fallback={
+           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '11px' }}>Waiting for Input...</div>
+        }>
+          
+          {/* A) BILD BEREICH - Nimmt den Restplatz (flex: 1) */}
           <div style={{ 
-            height: '35%', // Nimmt unteres Drittel ein
-            borderTop: '1px solid #333', 
-            background: '#080808', 
+            flex: '1',            // WICHTIG: Nimmt restlichen Platz
+            minHeight: '0',       // WICHTIG: Erlaubt Schrumpfen, verhindert Overflow
+            width: '100%',
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
             padding: '20px', 
-            overflowY: 'auto',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
+            position: 'relative'
+          }}>
+            <img src={previewUrl()} alt="Preview" style={{ 
+              maxWidth: '100%', 
+              maxHeight: '100%', 
+              objectFit: 'contain', 
+              boxShadow: '0 5px 20px rgba(0,0,0,0.6)' 
+            }} />
+          </div>
+
+          {/* B) AI READOUT BEREICH - Feste Höhe oder max-height */}
+          <div class="vision-scroll" style={{ 
+            height: '250px',        // Fixe Höhe für Stabilität (oder flex basis)
+            flexShrink: 0,          // Darf nicht gequetscht werden
+            width: '100%',
+            borderTop: '1px solid #222', 
+            background: '#080808', 
+            padding: '12px',
+            boxSizing: 'border-box',
+            overflowY: 'auto',      // Scrollen erlauben
             fontFamily: 'monospace'
           }}>
-            <div style={{ fontSize: '10px', color: '#4d8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px', fontWeight: 'bold' }}>
-              /// GEMINI VISION REPORT
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '12px', fontSize: '11px', lineHeight: '1.6' }}>
+            <Show when={activeExif()?.ai?.analysis} fallback={
+              <div style={{ color: '#333', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent:'center', height:'100%', gap: '8px' }}>
+                <span class="blink">/// ANALYZING SIGNAL...</span>
+              </div>
+            }>
+              <div style={{ fontSize: '9px', color: '#4d8', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px', fontWeight: 'bold', position:'sticky', top:0, background:'#080808', paddingBottom:'4px' }}>
+                /// GEMINI VISION REPORT
+              </div>
               
-              <div style={{ color: '#666' }}>SUBJECT</div>
-              <div style={{ color: '#ddd' }}>{activeExif().ai.analysis.subject || '-'}</div>
-              
-              <div style={{ color: '#666' }}>LIGHTING</div>
-              <div style={{ color: '#ccc' }}>{activeExif().ai.analysis.lighting || '-'}</div>
-              
-              <div style={{ color: '#666' }}>COMPOSITION</div>
-              <div style={{ color: '#ccc' }}>{activeExif().ai.analysis.composition || '-'}</div>
-              
-              <div style={{ color: '#666' }}>TECH CHECK</div>
-              <div style={{ color: '#ccc' }}>{activeExif().ai.analysis.technical || '-'}</div>
-
-            </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '8px', fontSize: '10px', lineHeight: '1.5', paddingRight: '4px' }}>
+                <div style={{ color: '#555' }}>SUBJECT</div>
+                <div style={{ color: '#ccc' }}>{activeExif().ai.analysis.subject || '-'}</div>
+                
+                <div style={{ color: '#555' }}>LIGHT</div>
+                <div style={{ color: '#999' }}>{activeExif().ai.analysis.lighting || '-'}</div>
+                
+                <div style={{ color: '#555' }}>COMP</div>
+                <div style={{ color: '#999' }}>{activeExif().ai.analysis.composition || '-'}</div>
+                
+                <div style={{ color: '#555' }}>TECH</div>
+                <div style={{ color: '#999' }}>{activeExif().ai.analysis.technical || '-'}</div>
+              </div>
+            </Show>
           </div>
-        </Show>
 
+        </Show>
       </div>
 
       {/* 3. RIGHT SIDEBAR */}
@@ -180,7 +229,7 @@ function App() {
                 Active Pipeline
               </div>
               <div style={{ fontSize: '10px', color: '#999', lineHeight: '1.4' }}>
-                Hybrid-Verarbeitung: EXIF (Raw) + Gemini 2.5 Flash
+                Hybrid-Verarbeitung
               </div>
             </div>
 
@@ -212,30 +261,37 @@ function App() {
                 </div>
               </div>
 
-              {/* AI Keywords Visualisierung */}
+              {/* AI Keywords Visualisierung (Strict Vertical) */}
               <Show when={activeExif()?.ai?.keywords?.length > 0}>
                 <div style={{ marginTop: '20px', borderTop: '1px solid #333', paddingTop: '12px' }}>
                   <div style={{ fontSize: '9px', color: '#4d8', marginBottom: '10px', textTransform:'uppercase', fontWeight: 'bold', display:'flex', alignItems:'center', gap:'6px' }}>
                     <span>✦ Gemini Vision (Tags)</span>
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    <For each={activeExif().ai.keywords.slice(0, 5)}>{(kw) => (
-                      <span style={{ 
+                  
+                  {/* FIX: Vertikale Liste */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
+                    <For each={activeExif().ai.keywords.slice(0, 3)}>{(kw) => (
+                      <div style={{ 
                         fontSize: '10px', 
                         background: '#0f1f15', 
                         color: '#6f9', 
-                        padding: '3px 8px', 
-                        borderRadius: '12px',
-                        border: '1px solid #1a3a2a',
-                        whiteSpace: 'nowrap'
+                        padding: '4px 8px', 
+                        borderRadius: '2px',
+                        borderLeft: '2px solid #2f5f3f',
+                        background: '#111',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
                       }}>
                         {kw}
-                      </span>
+                      </div>
                     )}</For>
-                    <Show when={activeExif().ai.keywords.length > 5}>
-                       <span style={{ fontSize: '9px', color: '#555', alignSelf: 'center', marginLeft: '2px' }}>
-                         +{activeExif().ai.keywords.length - 5}
-                       </span>
+                    <Show when={activeExif().ai.keywords.length > 3}>
+                       <div style={{ fontSize: '9px', color: '#555', paddingLeft: '4px', marginTop: '4px' }}>
+                         + {activeExif().ai.keywords.length - 3} more tags...
+                       </div>
                     </Show>
                   </div>
                 </div>
