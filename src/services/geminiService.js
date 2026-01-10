@@ -1,7 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// FIX: Wir nutzen den stabilen Alias, NICHT das Preview-Image Modell.
-// Das normale Flash Modell ist bereits multimodal (kann Bilder sehen).
+// Wir nutzen den stabilen Alias für Gemini 2.5 Flash
 const MODEL_NAME = "gemini-2.5-flash";
 
 const getApiKey = () => {
@@ -26,6 +25,8 @@ const fileToGenerativePart = async (file) => {
 
 /**
  * Hauptfunktion: Analysiert das Bild mit Gemini Vision
+ * @param {File} imageFile - Das JPG Proxy Bild
+ * @returns {Promise<{keywords: string[], raw: string}>}
  */
 export const analyzeImageWithPro = async (imageFile) => {
   try {
@@ -33,16 +34,23 @@ export const analyzeImageWithPro = async (imageFile) => {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
+    // DER NEUE PROMPT: STRICTLY ENGLISH
     const prompt = `
-      Analysiere dieses Bild professionell für eine Stock-Foto-Agentur.
+      Analyze this image professionally for a stock photography agency.
       
-      Aufgabe:
-      1. Erstelle eine Liste von 5 bis 10 präzisen, beschreibenden Keywords.
-      2. Mische deutsche und englische Begriffe.
-      3. Achte auf: Hauptmotiv, Lichtstimmung, Technik, Emotion.
+      Task:
+      1. Generate a list of 10-15 precise, descriptive keywords.
+      2. LANGUAGE: ENGLISH ONLY. No other languages.
+      3. Focus on: 
+         - Main Subject (e.g., "Mallard", "Duck")
+         - Action/State (e.g., "Flying", "Swimming")
+         - Environment (e.g., "Lake", "Outdoors")
+         - Technical/Visuals (e.g., "Bokeh", "Telephoto", "Sharp focus")
+         - Concepts/Mood (e.g., "Freedom", "Wildlife", "Nature")
       
-      WICHTIG: Antworte AUSSCHLIESSLICH mit einem validen JSON Array aus Strings.
-      Kein Markdown. Beispiel: ["Ente", "Duck", "Wildlife", "Wasser"]
+      IMPORTANT: Respond ONLY with a valid JSON Array of Strings.
+      No Markdown, no explanations.
+      Example Output: ["Mallard", "Duck", "Water", "Flight", "Wildlife", "Nature", "Green", "Motion"]
     `;
 
     const imagePart = await fileToGenerativePart(imageFile);
@@ -71,7 +79,6 @@ export const analyzeImageWithPro = async (imageFile) => {
     };
 
   } catch (error) {
-    // Hier fangen wir den Quota Fehler ab und zeigen ihn lesbar an
     console.error("AI Analyse fehlgeschlagen:", error);
     return { keywords: [], error: error.message };
   }

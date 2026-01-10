@@ -2,18 +2,16 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { collection, addDoc } from "firebase/firestore";
 import { storage, db } from '../firebase';
 import ExifReader from 'exifreader';
-// WICHTIG: Die Verbindung zur Intelligenz
 import { analyzeImageWithPro } from './geminiService';
 
-// --- XMP GENERATOR (Mit Keywords & Deep Metadata) ---
+// --- XMP GENERATOR ---
 const createXmpContent = (data) => {
   const rating = data.rating || 0;
   const label = "";
   
-  // 1. Keywords (AI) in XMP Struktur verwandeln
+  // 1. Keywords (AI)
   let subjectBlock = "";
   if (data.keywords && data.keywords.length > 0) {
-    // Jedes Keyword wird ein Listen-Eintrag
     const listItems = data.keywords.map(k => `<rdf:li>${k}</rdf:li>`).join('\n     ');
     subjectBlock = `
    <dc:subject>
@@ -23,7 +21,7 @@ const createXmpContent = (data) => {
    </dc:subject>`;
   }
 
-  // 2. Datum formatieren
+  // 2. Datum
   let xmpDate = "";
   if (data.exif.dateTime && typeof data.exif.dateTime === 'string') {
     try {
@@ -101,11 +99,10 @@ const formatLensName = (tags) => {
 export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
   
   try {
-    // 1. EXIF aus dem RAW lesen
+    // 1. EXIF lesen
     onStatus(`Lese EXIF aus ${rawFile.name}...`);
     const tags = await ExifReader.load(rawFile);
     
-    // Daten extrahieren
     const exifData = {
       model: tags['Model']?.description || "Unbekannt",
       lens: formatLensName(tags),
@@ -121,16 +118,12 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
       colorSpace: tags['ColorSpace']?.value || 65535 
     };
 
-    // 2. ECHTE AI ANALYSE (Gemini Flash)
+    // 2. AI Analyse
     onStatus("Sende Bild an Gemini (Analyse)...");
-    
-    // Default Werte, falls AI scheitert
     let aiResult = { keywords: [], score: 0, rating: 0 };
     
     try {
-        // Wir schicken das kleine JPG Proxy zur Analyse (schnell!)
         const analysis = await analyzeImageWithPro(previewFile);
-        
         if (analysis && analysis.keywords) {
             aiResult.keywords = analysis.keywords;
             onStatus(`🤖 AI Schlagworte: ${analysis.keywords.slice(0, 3).join(", ")}...`);
@@ -140,7 +133,7 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
         onStatus("⚠️ AI Analyse fehlgeschlagen (nutze nur EXIF).");
     }
 
-    // 3. XMP Generieren (Mit AI Keywords!)
+    // 3. XMP Generieren
     onStatus("Generiere Smart XMP...");
     const xmpString = createXmpContent({ 
         rating: aiResult.rating, 
@@ -169,18 +162,26 @@ export const processAssetBundle = async (rawFile, previewFile, onStatus) => {
       upload(xmpFile, xmpFile.name)
     ]);
 
-    // 5. DB Eintrag (inklusive AI Ergebnisse)
+    // 5. DB & RETURN
     onStatus("Registriere Asset in Datenbank...");
     await addDoc(collection(db, "assets"), {
       filename: rawFile.name,
       exif: exifData,
-      ai: aiResult, // Speichern wir auch in der DB für spätere Suche!
+      ai: aiResult,
       urls: { raw: rawUrl, preview: previewCloudUrl, xmp: xmpUrl },
       uploadedAt: new Date()
     });
 
     onStatus("✅ Fertig.");
-    return { success: true, data: exifData };
+    
+    // WICHTIG: Hier geben wir AI + EXIF zurück an die App!
+    return { 
+        success: true, 
+        data: { 
+            ...exifData, 
+            ai: aiResult 
+        } 
+    };
 
   } catch (error) {
     console.error("PIPELINE ERROR:", error);

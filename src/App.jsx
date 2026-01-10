@@ -85,7 +85,7 @@ function App() {
 
       if (result.success) {
         addLog(`✅ Archiviert: ${baseName}`, 'success');
-        setActiveExif(result.data);
+        setActiveExif(result.data); 
       } else {
         addLog(`❌ Fehler: ${baseName}`, 'error');
       }
@@ -101,7 +101,7 @@ function App() {
       <div class="left-sidebar">
         <div style={{ padding: '16px', borderBottom: '1px solid #222' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600', letterSpacing: '-0.02em' }}>Lumina Ingest</h3>
-          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.2 MVP</div>
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>CoreBrain v0.2.1 AI</div>
         </div>
 
         <div style={{ padding: '16px' }}>
@@ -130,68 +130,84 @@ function App() {
         </div>
       </div>
 
-      {/* 3. RIGHT SIDEBAR - KOMBINIERT */}
+      {/* 3. RIGHT SIDEBAR - MIT TOP 3 AI KEYWORDS */}
       <div class="right-sidebar">
         <div style={{ color: '#555', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '15px', fontWeight: 'bold' }}>Status Monitor</div>
         
         <Show when={isProcessing() || previewUrl()}>
           <div style={{ background: '#161616', borderRadius: '4px', padding: '12px', border: '1px solid #222' }}>
             
-            {/* 1. PIPELINE STATUS (Wiederhergestellt!) */}
+            {/* Pipeline Status */}
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '11px', color: '#fff', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4f4', boxShadow: '0 0 5px #4f4' }}></div>
                 Active Pipeline
               </div>
               <div style={{ fontSize: '10px', color: '#999', lineHeight: '1.4' }}>
-                Simulierte Extraktion aus RAW aktiv.
-              </div>
-              <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #333', fontSize: '9px', color: '#666', fontFamily: 'monospace' }}>
-                <div style={{display:'flex', justifyContent:'space-between'}}><span>Input:</span> <span style={{color:'#888'}}>NEF (D610)</span></div>
-                <div style={{display:'flex', justifyContent:'space-between', marginTop:'2px'}}><span>Proxy:</span> <span style={{color:'#888'}}>JPG (Embed)</span></div>
-                <div style={{display:'flex', justifyContent:'space-between', marginTop:'2px'}}><span>Engine:</span> <span style={{color:'#888'}}>CoreBrain</span></div>
+                Hybrid-Verarbeitung: EXIF (Raw) + Gemini 2.5 Flash
               </div>
             </div>
 
-            {/* 2. ECHTE EXIF DATEN (Nur wenn fertig) */}
+            {/* ECHTE DATEN */}
             <Show when={activeExif()}>
               <div style={{ marginTop: '16px', borderTop: '1px solid #333', paddingTop: '12px' }}>
-                <div style={{ fontSize: '9px', color: '#555', marginBottom: '8px', textTransform:'uppercase', fontWeight: 'bold' }}>RAW Metadaten</div>
+                <div style={{ fontSize: '9px', color: '#666', marginBottom: '8px', textTransform:'uppercase', fontWeight: 'bold' }}>RAW Metadaten</div>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 4px' }}>
-                  
-                  {/* Kamera */}
                   <div style={{ gridColumn: 'span 2' }}>
-                    <div style={{ fontSize: '9px', color: '#666' }}>Camera</div>
+                    <div style={{ fontSize: '9px', color: '#555' }}>Camera</div>
                     <div style={{ fontSize: '11px', color: '#e5e5e5', fontWeight:'500' }}>{activeExif().model}</div>
                   </div>
-
-                  {/* Lens */}
                   <div style={{ gridColumn: 'span 2', marginBottom: '4px' }}>
-                    <div style={{ fontSize: '9px', color: '#666' }}>Lens</div>
+                    <div style={{ fontSize: '9px', color: '#555' }}>Lens</div>
                     <div style={{ fontSize: '11px', color: '#ccc' }}>{activeExif().lens}</div>
                   </div>
-
-                  {/* ISO */}
                   <div>
-                    <div style={{ fontSize: '9px', color: '#666' }}>ISO</div>
+                    <div style={{ fontSize: '9px', color: '#555' }}>ISO</div>
                     <div style={{ fontSize: '11px', color: '#ccc', fontFamily: 'monospace' }}>{activeExif().iso}</div>
                   </div>
-
-                  {/* Blende */}
                   <div>
-                    <div style={{ fontSize: '9px', color: '#666' }}>Aperture</div>
+                    <div style={{ fontSize: '9px', color: '#555' }}>Aperture</div>
                     <div style={{ fontSize: '11px', color: '#ccc', fontFamily: 'monospace' }}>{activeExif().aperture}</div>
                   </div>
-
-                  {/* Zeit */}
                   <div style={{ gridColumn: 'span 2' }}>
-                    <div style={{ fontSize: '9px', color: '#666' }}>Shutter</div>
+                    <div style={{ fontSize: '9px', color: '#555' }}>Shutter</div>
                     <div style={{ fontSize: '11px', color: '#ccc', fontFamily: 'monospace' }}>{activeExif().shutter}</div>
                   </div>
-
                 </div>
               </div>
+
+              {/* NEU: TOP 3 KEYWORDS */}
+              <Show when={activeExif()?.ai?.keywords?.length > 0}>
+                <div style={{ marginTop: '20px', borderTop: '1px solid #333', paddingTop: '12px' }}>
+                  <div style={{ fontSize: '9px', color: '#4d8', marginBottom: '10px', textTransform:'uppercase', fontWeight: 'bold', display:'flex', alignItems:'center', gap:'6px' }}>
+                    <span>✦ Gemini Vision (Top 3)</span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {/* HIER: slice(0, 3) für maximal 3 Begriffe */}
+                    <For each={activeExif().ai.keywords.slice(0, 3)}>{(kw) => (
+                      <span style={{ 
+                        fontSize: '10px', 
+                        background: '#0f1f15', 
+                        color: '#6f9', 
+                        padding: '3px 8px', 
+                        borderRadius: '12px',
+                        border: '1px solid #1a3a2a',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {kw}
+                      </span>
+                    )}</For>
+                    
+                    {/* Optional: +X more Anzeige */}
+                    <Show when={activeExif().ai.keywords.length > 3}>
+                       <span style={{ fontSize: '9px', color: '#555', alignSelf: 'center', marginLeft: '2px' }}>
+                         +{activeExif().ai.keywords.length - 3} more
+                       </span>
+                    </Show>
+                  </div>
+                </div>
+              </Show>
             </Show>
 
           </div>
